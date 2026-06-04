@@ -1,0 +1,24 @@
+# Built example binary. Anchored paths only, so these never match the cmd/roll/
+# SOURCE directory (a bare "roll" would, since a slash-less pattern matches any
+# path component, including a dir).
+/roll
+/cmd/roll/roll
+
+# Plugin build staging dir (scripts/build-plugin.sh output).
+/build/
+
+# Test binaries / coverage
+*.test
+*.out
+coverage.*
+
+# Go build/work files
+go.work
+go.work.sum
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

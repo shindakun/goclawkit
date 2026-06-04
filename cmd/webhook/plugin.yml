@@ -1,0 +1,27 @@
+# plugin.yml: the at-rest, pre-launch description the goclaw host reads BEFORE
+# launching this plugin. The runtime `hello` handshake stays the source of truth for
+# the live channel; this file is what the host knows before the process starts.
+#
+# This is an INBOUND-webhook CHANNEL: an external system POSTs events to the plugin's
+# listener (WEBHOOK_ADDR/inbound), each becomes a message the agent replies to, and
+# replies are POSTed out to OUTBOUND_URL. The agent does NOT call this plugin; the
+# outside world feeds it. (An "LLM fires a webhook" capability would be a TOOL, not a
+# channel.)
+#
+# name/kind/version MUST agree with the handshake Info (see cmd/webhook/main.go).
+# A channel has no slash command, so `command:` is omitted. `env` lists variable
+# NAMES only; the host supplies VALUES at launch (never put a secret value here).
+name: webhook                # stable id; must match Info.Name from the handshake
+kind: channel                # this is a channel, not a tool
+version: "1.0.0"             # the plugin's own version
+author: shindakun            # plugin author (free-form); shown in plugin listings
+url: https://github.com/shindakun/goclawkit  # plugin source/home
+exec: webhook                # built binary, relative to this plugin dir
+description: Inbound HTTP webhook channel; external POSTs become messages, replies POST out.
+env:                         # env var NAMES the plugin needs; host supplies VALUES
+  - WEBHOOK_ADDR             # inbound listen address (e.g. ":8080")
+  - OUTBOUND_URL             # where replies are POSTed
+  - WEBHOOK_TOKEN            # REQUIRED shared secret; every inbound POST must carry it
+                             # (X-Webhook-Token / Bearer). Unset => all POSTs 401.
+  - WEBHOOK_SENDER_ID        # optional: pin every inbound's SenderID to this value;
+                             # if unset, SenderID is namespaced ("webhook:"+sender)
