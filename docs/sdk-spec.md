@@ -1,11 +1,19 @@
 # goclawkit: SDK and wire-protocol reference
 
 The authoritative contract for **goclaw plugins**: separate compiled binaries the
-goclaw host launches and talks to over stdio. It specifies the wire protocol, the
+goclaw side launches and talks to over stdio. It specifies the wire protocol, the
 tool and channel contracts, the `plugin.yml` manifest schema, and the topic
 conventions. The worked demos (`cmd/roll/`, `cmd/webhook/`) implement it; their own
 READMEs cover build/run/register. Start at the repo [README](../README.md) for the
 overview; read this when you need the exact contract.
+
+> Note on "the host" vs the launcher: this spec says "the host launches the plugin"
+> for brevity, but a plugin is launcher-AGNOSTIC. It speaks frames over stdin/stdout
+> to whatever parent process started it. In goclaw's current deployment that parent
+> is the in-container agent RUNNER (plugins run inside the agent's sandbox, not on
+> the host machine), which is a security choice on goclaw's side. The SDK and a
+> plugin author do not need to care: read "the host" below as "whatever goclaw
+> process launched me."
 
 Module path: `github.com/shindakun/goclawkit`. Pure Go, no external dependencies
 for the core (stdlib only). Match Go 1.26 (goclaw is on 1.26.3).
