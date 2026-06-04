@@ -1,8 +1,10 @@
-# Built example binary. Anchored paths only, so these never match the cmd/roll/
-# SOURCE directory (a bare "roll" would, since a slash-less pattern matches any
+# Built example binaries. Anchored paths only, so these never match the cmd/<name>/
+# SOURCE directories (a bare "roll" would, since a slash-less pattern matches any
 # path component, including a dir).
 /roll
+/webhook
 /cmd/roll/roll
+/cmd/webhook/webhook
 
 # Plugin build staging dir (scripts/build-plugin.sh output).
 /build/
