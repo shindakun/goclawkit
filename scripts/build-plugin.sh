@@ -19,7 +19,8 @@
 #   With no name, build every plugin under cmd/ that has a plugin.yml.
 #
 # Env:
-#   GOOS, GOARCH   cross-compile target (default: host platform)
+#   GOOS, GOARCH   cross-compile target (default: linux/amd64, the container's
+#                  platform; a plugin MUST be a Linux binary to run in goclaw)
 
 set -euo pipefail
 
@@ -29,6 +30,14 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$ROOT_DIR"
 
 BUILD_DIR="${ROOT_DIR}/build"
+
+# A goclaw plugin runs INSIDE the agent's Linux container, so it MUST be a Linux
+# binary regardless of the build host. Default the target to linux/amd64; override
+# GOOS/GOARCH for a different container arch (e.g. GOARCH=arm64). Building for the
+# host platform (e.g. darwin) would fail at launch with "exec format error".
+export GOOS="${GOOS:-linux}"
+export GOARCH="${GOARCH:-amd64}"
+export CGO_ENABLED="${CGO_ENABLED:-0}"
 
 # yaml_get FILE KEY -> prints the scalar value of a top-level `key: value` line,
 # trimming quotes, inline comments, and surrounding whitespace. Good enough for the
@@ -78,8 +87,7 @@ build_one() {
     local out_dir="${BUILD_DIR}/${name}"
     mkdir -p "$out_dir"
 
-    local target="host"
-    [ -n "${GOOS:-}" ] || [ -n "${GOARCH:-}" ] && target="${GOOS:-host}/${GOARCH:-host}"
+    local target="${GOOS}/${GOARCH}"
 
     echo "Building ${name} (${yml_kind:-tool} v${version:-?}) for ${target} -> build/${name}/${exec_name}"
     go build -trimpath -ldflags="-s -w" -o "${out_dir}/${exec_name}" "./${cmd_dir}"

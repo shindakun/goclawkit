@@ -666,12 +666,31 @@ build/<name>/
 ```
 
 Usage: `scripts/build-plugin.sh [name ...]`. With names, it builds those plugins;
-with no name, it builds every `cmd/<name>/` that has a `plugin.yml`. It targets the
-host platform by default; set `GOOS`/`GOARCH` to cross-compile. The script does NOT
-copy into goclaw: it only stages under `build/` (which is gitignored), and the
+with no name, it builds every `cmd/<name>/` that has a `plugin.yml`. The script does
+NOT copy into goclaw: it only stages under `build/` (which is gitignored), and the
 operator copies `build/<name>/` into their goclaw plugins directory. It is bash-3.2
 compatible (the macOS default) and uses no external YAML dependency (it reads the
 flat `plugin.yml` with `sed`).
+
+### A plugin MUST be a Linux binary (it runs in the container)
+
+This is a hard requirement, not a preference. goclaw launches plugins INSIDE the
+agent's Linux container (the in-container runner is the launcher), so a plugin must
+be compiled for the container's OS/arch, NOT the author's machine. A macOS or
+Windows build will fail at launch with `exec format error` and the plugin will not
+load. Build for Linux:
+
+```sh
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o roll ./cmd/roll
+```
+
+Use `GOARCH=arm64` if the goclaw host runs an arm64 container engine. `build-plugin.sh`
+defaults its target to `linux/amd64` for exactly this reason (override `GOOS`/`GOARCH`
+to match a different container arch). The plain `go build -o roll ./cmd/roll` shown
+in the quickstart produces a binary for the author's platform and is fine ONLY for
+`-selftest`/local development; it will not run inside goclaw unless that platform is
+linux. Pure-Go plugins (stdlib only, as the SDK core is) cross-compile cleanly with
+`CGO_ENABLED=0`.
 
 ## Notes for the host side (goclaw), not built here
 

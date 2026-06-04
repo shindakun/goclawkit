@@ -55,6 +55,12 @@ go build -o roll ./cmd/roll
 ./roll -selftest          # 2d6 -> [4, 5] = 9
 ```
 
+To INSTALL a plugin into goclaw, build it for **Linux** instead (plugins run in the
+agent's Linux container, so a host-platform binary fails with `exec format error`):
+`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o roll ./cmd/roll`, or use
+`scripts/build-plugin.sh`, which defaults to `linux/amd64`. See
+[`cmd/roll/README.md`](cmd/roll/README.md).
+
 ## Packaging and installing a plugin
 
 A plugin ships as its own directory with the built binary and a declarative

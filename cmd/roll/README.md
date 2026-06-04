@@ -10,8 +10,20 @@ the tool and calls `plugin.ServeTool`.
 
 ## Build
 
+A goclaw plugin runs INSIDE the agent's Linux container, so the binary you install
+must be built for Linux, not your machine. A host-platform build fails at launch
+with `exec format error`:
+
 ```sh
-go build -o roll ./cmd/roll
+# For installing into goclaw (the binary runs in the Linux container):
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o roll ./cmd/roll
+# (use GOARCH=arm64 if the goclaw host runs an arm64 container engine)
+```
+
+For local development only (the `-selftest` below), a plain host build is fine:
+
+```sh
+go build -o roll ./cmd/roll   # host platform; OK for -selftest, NOT for goclaw
 ```
 
 ## Run it standalone (`-selftest`)
