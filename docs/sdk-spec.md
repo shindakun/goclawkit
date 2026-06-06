@@ -3,9 +3,9 @@
 The authoritative contract for **goclaw plugins**: separate compiled binaries the
 goclaw side launches and talks to over stdio. It specifies the wire protocol, the
 tool and channel contracts, the `plugin.yml` manifest schema, and the topic
-conventions. The worked demos (`cmd/roll/`, `cmd/webhook/`) implement it; their own
-READMEs cover build/run/register. Start at the repo [README](../README.md) for the
-overview; read this when you need the exact contract.
+conventions. The worked demos (`cmd/roll/` for a tool, `cmd/irc/` for a channel)
+implement it; their own READMEs cover build/run/register. Start at the repo
+[README](../README.md) for the overview; read this when you need the exact contract.
 
 > Note on "the host" vs the launcher: this spec says "the host launches the plugin"
 > for brevity, but a plugin is launcher-AGNOSTIC. It speaks frames over stdin/stdout
@@ -63,7 +63,9 @@ The SDK covers two plugin kinds, both implemented:
 - **Tools** (request/response): `plugin.Tool` + `Serve`/`ServeTool`. Worked demo:
   `cmd/roll/`.
 - **Channels** (long-lived, bidirectional): `plugin.Channel` + `ServeChannel`. Worked
-  demo: `cmd/webhook/`.
+  demo: `cmd/irc/` (an IRC bridge that dials OUT). A channel that needs to call an
+  external HTTPS API should make those calls with `plugin.HTTPClient()` (see "Making
+  external HTTPS calls").
 
 Both ride the same frame format; a channel adds only new topics, never a wire-format
 change. What is deliberately NOT here: Layer 2 (the cross-plugin socket coordination
@@ -94,17 +96,23 @@ goclawkit/
       serve_test.go           drive Serve with scripted stdin, assert stdout frames
       serve_channel.go        ServeChannel(): the channel runtime (inbound + send pumps)
       serve_channel_test.go   drive ServeChannel over in-memory pipes
+      http.go                 HTTPClient(): proxy-correct *http.Client for external HTTPS
   cmd/
     roll/                     the worked TOOL demo (dice roller)
       main.go                 the plugin IS the command (godoorkit's cmd/<name>-door)
       main_test.go            wire smoke test: exec the binary, drive hello+tool.invoke
       plugin.yml              at-rest, pre-launch description the host reads (contract)
       README.md               how to build + register in goclaw
-    webhook/                  the worked CHANNEL demo (HTTP webhook gateway)
-      main.go                 implements plugin.Channel; main calls ServeChannel
-      main_test.go            inbound/outbound mapping + a wire test over the binary
+    irc/                      the worked CHANNEL demo (IRC bridge; dials OUT, no listener)
+      main.go                 ircChannel implements plugin.Channel; main calls ServeChannel
+      irc.go                  minimal stdlib IRC client (TLS dial, register, parse, send)
+      fakeircd.go             in-process fake IRC server for -selftest and tests
+      main_test.go            wire test over the binary against the fake ircd
       plugin.yml              kind: channel (no slash command)
-      README.md               build, env vars, curl example, -selftest round trip
+      README.md               config, -selftest, the nick-spoof caveat
+    webhook/                  an ILLUSTRATIVE channel (INBOUND HTTP listener; see the
+                              demos section: its inbound model is off-strategy because a
+                              plugin's port is not reachable from outside the container)
 ```
 
 Layout follows godoorkit exactly: importable code lives under `pkg/<name>/`
@@ -538,6 +546,12 @@ These are new topics only; FrameType, the header, and ProtocolVer are unchanged.
 
 ### Inbound channel security (fail closed)
 
+This applies only to a channel that accepts INBOUND connections (a listener). In
+goclaw's deployment a plugin runs in the agent's container, so an inbound port is not
+reachable from outside, which is exactly why the canonical channel (`cmd/irc/`) DIALS
+OUT instead. Prefer a dial-out channel; the guidance below is for the inbound case
+where it is unavoidable (the `cmd/webhook/` demo illustrates it).
+
 A channel that accepts INBOUND traffic from the outside world is an open door into
 the agent: an inbound message becomes an agent prompt, so an unauthenticated source
 lets anyone reach the agent (burning tokens, driving tool calls) and, worse, spoof
@@ -603,22 +617,32 @@ unset (proxy off / dev mode) it leaves `RootCAs` nil so the system roots are use
 unchanged, so the same code is correct in both modes with no branching. The helper has
 NO OAuth or auth logic: credential injection lives entirely host-side in goclaw.
 
-## The worked demos (cmd/roll/, cmd/webhook/)
+## The worked demos (cmd/roll/, cmd/irc/, cmd/webhook/)
 
-Two reference plugins exercise the SDK end to end. Each is a real, registerable plugin
-in its own `cmd/<name>/` directory (the plugin IS the command), with its own
-`plugin.yml`, `-selftest`, and an end-to-end wire test. The build/run/register details
-live in each plugin's README, not here, so this spec stays the general SDK reference.
+Reference plugins exercise the SDK end to end. Each is a real, registerable plugin in
+its own `cmd/<name>/` directory (the plugin IS the command), with its own `plugin.yml`,
+`-selftest`, and an end-to-end wire test. The build/run/register details live in each
+plugin's README, not here, so this spec stays the general SDK reference.
 
 - **`cmd/roll/`** — the worked TOOL demo: a dice roller (NdM notation), the smallest
   thing that exercises typed args, input validation, and a returned result. See
   [`cmd/roll/README.md`](../cmd/roll/README.md).
-- **`cmd/webhook/`** — the worked CHANNEL demo: an INBOUND HTTP webhook gateway,
-  proving `ServeChannel` and the `channel.*` topics. It is the inbound case on purpose
-  (external traffic in -> agent -> reply out, the chat-gateway shape); an "LLM fires a
-  webhook" capability would be the outbound direction and a TOOL, not a channel. It
-  authenticates inbound and pins identity per the inbound-channel-security principle
-  above. See [`cmd/webhook/README.md`](../cmd/webhook/README.md).
+- **`cmd/irc/`** — the worked CHANNEL demo and the canonical one: a minimal IRC bridge.
+  It DIALS OUT to an IRC server over TLS (stdlib only, no IRC library), joins a channel,
+  forwards messages that mention the bot or are sent to it directly up to the agent as
+  `Inbound`, and posts replies back as `Outbound`. This is the right shape for a goclaw
+  channel: the bot opens ONE outbound connection, so there is no inbound listener and no
+  open port. It owns reconnect-with-backoff and defers owner authorization to goclaw's
+  access gate (IRC nicks are spoofable without SASL, a documented caveat). See
+  [`cmd/irc/README.md`](../cmd/irc/README.md).
+- **`cmd/webhook/`** — an ILLUSTRATIVE channel, kept to show the SAME `ServeChannel`
+  contract with a different (inbound) transport, but it is OFF-STRATEGY for goclaw's
+  deployment: it runs an inbound HTTP listener, and a plugin runs inside the agent's
+  container, so its port is not reachable from the outside network and nothing can POST
+  to it. A real goclaw channel should DIAL OUT (like `cmd/irc/`) rather than listen.
+  webhook still authenticates inbound and pins identity per the inbound-channel-security
+  principle above, illustrating those defenses for any future inbound use. See
+  [`cmd/webhook/README.md`](../cmd/webhook/README.md).
 
 ## Plugin manifest (plugin.yml): the at-rest, pre-launch description
 
