@@ -569,6 +569,40 @@ shutdown cancels Start's ctx and serveChannel returns nil; a heartbeat is answer
 A short doc comment at the top of channel.go must say: tools use Serve, channels use
 ServeChannel; both ride the same frames, channels just add the channel.* topics.
 
+## Making external HTTPS calls (pkg/plugin/http.go)
+
+A tool or channel that calls an external HTTPS API (Gmail, a weather API, any poll
+channel) must route through goclaw's credential proxy: the proxy injects the real
+credential on the way out, so the plugin sends NO auth header and never holds a token.
+goclaw sets the container env that makes this work (`HTTPS_PROXY`/`NO_PROXY` and
+`SSL_CERT_FILE` -> the proxy CA). The plugin just makes a plain
+`GET https://api.example.com/...` with no auth; the proxy terminates TLS with a leaf
+it minted (trusted via the CA above) and forwards upstream over real TLS.
+
+The footgun: Go's `http.DefaultClient` already honors that env, so it works, but an
+author who builds a custom `Transport` for timeouts/retries and forgets
+`Proxy: http.ProxyFromEnvironment` (or overrides `TLSClientConfig.RootCAs`) silently
+BYPASSES the proxy: the request goes direct with no injected auth and fails with an
+opaque 401 or TLS error.
+
+So the SDK provides the correct client as a one-call default:
+
+- `plugin.HTTPClient()` -> an `*http.Client` (30s timeout) configured by construction:
+  `Proxy: http.ProxyFromEnvironment`, and RootCAs = the SYSTEM roots PLUS the proxy CA
+  from `SSL_CERT_FILE`.
+- `plugin.HTTPClientTimeout(d)` -> the same with a chosen timeout.
+
+Rule for authors: **for any external HTTPS call, use `plugin.HTTPClient()`; do not
+hand-roll a Transport.** Wrap it for retries if needed, but keep the proxy + CA wiring.
+
+Two correctness points the helper bakes in: (1) it starts from the system roots and
+APPENDS the proxy CA, never replaces, because a plugin may also hit hosts with no
+stored credential, which the proxy blind-tunnels unintercepted, so those present their
+REAL public cert and must validate against system roots; (2) when `SSL_CERT_FILE` is
+unset (proxy off / dev mode) it leaves `RootCAs` nil so the system roots are used
+unchanged, so the same code is correct in both modes with no branching. The helper has
+NO OAuth or auth logic: credential injection lives entirely host-side in goclaw.
+
 ## The worked demos (cmd/roll/, cmd/webhook/)
 
 Two reference plugins exercise the SDK end to end. Each is a real, registerable plugin

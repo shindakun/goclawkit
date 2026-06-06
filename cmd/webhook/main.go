@@ -72,8 +72,11 @@ func newWebhookChannel(addr, outboundURL, token, pinSenderID string) *webhookCha
 		outboundURL: outboundURL,
 		token:       token,
 		pinSenderID: pinSenderID,
-		client:      &http.Client{Timeout: 10 * time.Second},
-		now:         time.Now,
+		// Use the SDK's HTTPClient so outbound POSTs route through goclaw's credential
+		// proxy (and trust the proxy CA) when running in the sandbox. Never hand-roll a
+		// Transport for an external call; see plugin.HTTPClient.
+		client: plugin.HTTPClientTimeout(10 * time.Second),
+		now:    time.Now,
 	}
 }
 
