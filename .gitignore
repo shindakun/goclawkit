@@ -3,8 +3,10 @@
 # path component, including a dir).
 /roll
 /webhook
+/irc
 /cmd/roll/roll
 /cmd/webhook/webhook
+/cmd/irc/irc
 
 # Plugin build staging dir (scripts/build-plugin.sh output).
 /build/
