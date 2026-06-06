@@ -127,6 +127,14 @@ author-facing SDK (the parallel to `pkg/door`). `pkg/plugin` imports `pkg/ipc` f
 the frame types. A plugin author imports `github.com/shindakun/goclawkit/pkg/plugin`
 (and rarely `pkg/ipc` directly).
 
+An author's OWN plugin repo follows the same `cmd/<name>/` convention, and a single
+repo MAY ship several plugins that share a `go.mod` and an `internal/` (e.g. a service's
+channel plus its tools). goclaw installs one at a time by naming the subdir:
+`/plugin add <git-url>#cmd/<name>`. A repo with exactly one plugin can instead put
+`plugin.yml` at its root and install with a bare `/plugin add <git-url>`. See the
+README "Two repo layouts" and goclaw `docs/security.md` (the whole repo is scanned even
+for a subdir build).
+
 The plugin is the command. Every godoorkit door is a standalone binary under
 `cmd/<name>-door/` that the BBS launches; goclaw launches a plugin the same way, so
 the demo lives at `cmd/roll/`, not under an `examples/` tree. The thin `main()`

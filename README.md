@@ -65,9 +65,9 @@ agent's Linux container, so a host-platform binary fails with `exec format error
 
 A plugin ships as its own directory with the built binary and a declarative
 `plugin.yml` the host reads before launching (kind, version, the env var names it
-needs, any slash command). The host walks a `plugins/` directory; each plugin is one
-subdir. `scripts/build-plugin.sh` stages a plugin (binary + its `plugin.yml`) into
-`build/<name>/`, ready to copy into goclaw:
+needs, any slash command). The host walks a `plugins/` directory; each installed plugin
+is one subdir. `scripts/build-plugin.sh` stages a plugin (binary + its `plugin.yml`)
+into `build/<name>/`, ready to copy into goclaw:
 
 ```sh
 scripts/build-plugin.sh roll      # -> build/roll/{roll, plugin.yml}
@@ -76,6 +76,47 @@ scripts/build-plugin.sh           # build every cmd/<name>/ that has a plugin.ym
 
 Secrets are never written into `plugin.yml`: it lists env var *names*; the host
 supplies the values at launch.
+
+### Two repo layouts (both are supported)
+
+A plugin's SOURCE repo can be laid out two ways, and goclaw's installer
+(`/plugin add`) handles both:
+
+1. **One plugin at the repo root** (e.g. `goclaw-roll`): `plugin.yml` and the package
+   sit at the repo root.
+
+   ```text
+   goclaw-roll/
+     go.mod
+     plugin.yml
+     main.go
+   ```
+
+   Install: `/plugin add https://github.com/you/goclaw-roll`
+
+2. **A monorepo with several plugins under `cmd/`** (e.g. `goclaw-gmail`, which ships a
+   `gmail` channel and a `gmail-tools` tool that share one `go.mod` and an `internal/`):
+   each plugin is `cmd/<name>/` with its OWN `plugin.yml`.
+
+   ```text
+   goclaw-gmail/
+     go.mod
+     internal/...            # shared code
+     cmd/gmail/plugin.yml    # the channel
+     cmd/gmail-tools/plugin.yml  # the tool
+   ```
+
+   Install ONE plugin at a time by naming its subdir with `#<subdir>`:
+
+   ```text
+   /plugin add https://github.com/you/goclaw-gmail#cmd/gmail
+   /plugin add https://github.com/you/goclaw-gmail#cmd/gmail-tools
+   ```
+
+The monorepo form is the right choice when plugins share auth/config/code (a service's
+channel + its tools); the one-per-repo form is simplest for a standalone plugin. In both
+cases the build is sandboxed in a throwaway container and goclaw scans the WHOLE repo for
+red flags even when only one subdir is built (see goclaw `docs/security.md`).
 
 ## Layout
 
