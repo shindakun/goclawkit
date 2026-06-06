@@ -736,6 +736,51 @@ Rules:
   the host never rewrites the author's file. The SDK/plugin does not deal with
   enable state.
 
+### Optional `oauth:` block (plugin-declared OAuth2 provider)
+
+A plugin that talks to an OAuth2 upstream (Gmail, Microsoft Graph, Spotify, ...) can
+DECLARE the provider in an `oauth:` block. The host (goclaw) owns the OAuth MECHANISM
+(the `goclaw auth add-oauth --plugin <name>` consent flow, code exchange, encrypted
+storage, refresh/rotation, and proxy injection); the plugin owns the provider FACTS.
+This is what lets a NEW OAuth service ship entirely as a plugin, with no host change.
+
+Everything in the block is provider CONFIG, never a secret: the operator still
+supplies the client id/secret at `add-oauth` time; they are never stored in the
+manifest. The plugin itself still holds no token (target mode): it makes plain HTTPS
+calls and the host's credential proxy injects the Bearer (see "Making external HTTPS
+calls"). The `oauth:` block is only consumed by `add-oauth`, not at plugin launch.
+
+```yaml
+oauth:
+  provider: google                                    # label for messages (free-form)
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth   # consent endpoint
+  token_url: https://oauth2.googleapis.com/token           # token + refresh endpoint
+  target_host: gmail.googleapis.com                   # API host this credential authenticates
+  scopes:                                             # scopes this plugin needs
+    - https://www.googleapis.com/auth/gmail.modify
+  auth_params:                                        # provider params to FORCE a refresh token
+    access_type: offline                              #   (Google; omit for providers that
+    prompt: consent                                   #    always issue one or use a scope)
+  scope_separator: " "                                # how scopes join: " " (default) or ","
+  client_auth: body                                   # client creds at token endpoint:
+                                                      #   body (default) or basic (HTTP Basic)
+```
+
+Field notes (each is a provider FACT, look it up in the provider's OAuth2 docs):
+
+- `auth_url` / `token_url` / `target_host` are required; `auth_url`, `token_url` and
+  `https://<target_host>` MUST be https (the host rejects anything else).
+- `auth_params` is how you force a long-lived refresh token. It varies by provider:
+  Google uses `access_type: offline` + `prompt: consent`; Microsoft instead adds an
+  `offline_access` SCOPE and needs no params; some providers always issue one (omit
+  the block). If consent returns no refresh token, this is usually what is wrong.
+- `scope_separator` is " " for most providers, "," for a few. `client_auth` is `body`
+  (client id/secret as form fields, e.g. Google) or `basic` (HTTP Basic header, e.g.
+  Spotify, Reddit).
+- The operator can override any of `--auth-url` / `--token-url` / `--target-api-url`
+  / `--scopes` at `add-oauth` time (e.g. for a self-hosted instance), so declare the
+  common case and let overrides handle the edges.
+
 ## Two ways a tool is triggered (agent invoke and slash command)
 
 A plugin's tool is reachable by two host paths, and BOTH end at the exact same
