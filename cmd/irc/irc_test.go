@@ -121,8 +121,28 @@ func startTestChannel(t *testing.T, nick string) (*ircChannel, <-chan plugin.Inb
 		srv.close()
 		t.Fatal("channel never joined")
 	}
+	// The fake signals joinedCh when it RECEIVES the JOIN, which happens inside
+	// connectAndRegister, BEFORE Start's goroutine records the live client via
+	// setClient. So a JOIN signal does not guarantee getClient() is non-nil yet; wait
+	// for the client to be recorded so a following Send does not race with the connect
+	// goroutine and get "irc: not connected".
+	waitClientReady(t, ch)
 	t.Cleanup(func() { cancel(); srv.close() })
 	return ch, inbound, srv, cancel
+}
+
+// waitClientReady blocks until the channel has recorded its live client (so Send will
+// reach the server), failing if it does not happen promptly.
+func waitClientReady(t *testing.T, ch *ircChannel) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if ch.getClient() != nil {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("client was not ready (setClient never recorded the connection)")
 }
 
 func TestChannelForwardsMention(t *testing.T) {
