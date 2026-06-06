@@ -63,9 +63,11 @@ The SDK covers two plugin kinds, both implemented:
 - **Tools** (request/response): `plugin.Tool` + `Serve`/`ServeTool`. Worked demo:
   `cmd/roll/`.
 - **Channels** (long-lived, bidirectional): `plugin.Channel` + `ServeChannel`. Worked
-  demo: `cmd/irc/` (an IRC bridge that dials OUT). A channel that needs to call an
-  external HTTPS API should make those calls with `plugin.HTTPClient()` (see "Making
-  external HTTPS calls").
+  demo: `cmd/irc/` (an IRC bridge that dials OUT). A POLL channel (inbound from polling
+  an upstream, e.g. Gmail) is a variant: implement `plugin.Poller` and call `ServePoll`,
+  which owns the poll loop and adapts onto a channel (see "Poll channels"). A channel
+  that calls an external HTTPS API should use `plugin.HTTPClient()` (see "Making external
+  HTTPS calls").
 
 Both ride the same frame format; a channel adds only new topics, never a wire-format
 change. What is deliberately NOT here: Layer 2 (the cross-plugin socket coordination
@@ -96,6 +98,8 @@ goclawkit/
       serve_test.go           drive Serve with scripted stdin, assert stdout frames
       serve_channel.go        ServeChannel(): the channel runtime (inbound + send pumps)
       serve_channel_test.go   drive ServeChannel over in-memory pipes
+      serve_poll.go           ServePoll(): poll-channel runtime (a thin Channel adapter)
+      serve_poll_test.go      drive ServePoll over in-memory pipes
       http.go                 HTTPClient(): proxy-correct *http.Client for external HTTPS
   cmd/
     roll/                     the worked TOOL demo (dice roller)
@@ -582,6 +586,47 @@ shutdown cancels Start's ctx and serveChannel returns nil; a heartbeat is answer
 
 A short doc comment at the top of channel.go must say: tools use Serve, channels use
 ServeChannel; both ride the same frames, channels just add the channel.* topics.
+
+## Poll channels (pkg/plugin/serve_poll.go, package plugin)
+
+Many channels do not hold a connection; their inbound comes from POLLING an upstream on
+an interval (Gmail, an RSS feed, a status API). That `Start` is always the same shape:
+tick, fetch, emit what is new. `ServePoll` owns that loop so the author implements only
+`Poll` + `Send`, the way `ServeChannel` owns the framing so an author writes only
+`Start` + `Send`.
+
+`ServePoll(p Poller)` is a THIN ADAPTER over `ServeChannel`, not a parallel runtime: it
+wraps the `Poller` in a `pollChannel` (whose `Start` runs the poll loop) and delegates
+to `ServeChannel`. The handshake still announces `Kind=channel`, so the host cannot tell
+a poll channel from a hand-written one, which is correct: it IS just a channel, with no
+new wire protocol.
+
+The `Poller` interface: `Info()`, `Interval() time.Duration` (asked once; non-positive
+uses the 60s default; read it from env in the constructor), `Poll(ctx) ([]Inbound,
+error)`, and `Send(ctx, Outbound) error` (same as `Channel.Send`).
+
+The loop `ServePoll` runs:
+
+- POLLS IMMEDIATELY, then spaces polls by `interval` measured from each poll's START (so
+  poll cost does not compound the interval). A freshly-started plugin is live at once,
+  not after a full interval.
+- BACKS OFF on a `Poll` error (capped exponential, 1s base to 1m), resets to the base
+  after any clean poll, and logs each retry. A failing upstream is not hammered.
+- EMITS each returned `Inbound` up the `channel.inbound` event stream IN SLICE ORDER.
+- YIELDS to ctx every iteration (so a poll that overruns the interval runs back-to-back
+  but can never busy-spin), and unwinds promptly when `ServeChannel` cancels the ctx on
+  shutdown/EOF.
+
+DEDUP IS THE AUTHOR'S JOB, and this is the one thing to get right: `ServePoll` has NO
+memory of what it emitted, so `Poll` must return only genuinely-new items or the agent
+is flooded with repeats every interval. A source you can mutate dedups by mutating it,
+e.g. Gmail queries `is:unread` and MARKS each returned message read, so the next query
+excludes it. A source you cannot mutate (RSS) needs `Poll` to track seen ids itself.
+(There is deliberately no SDK `SeenSet` helper yet; add one only when a second poll
+plugin needs it.)
+
+Author rule: for a channel whose inbound comes from polling, implement `Poller` and call
+`ServePoll`; you write only `Poll` and `Send`.
 
 ## Making external HTTPS calls (pkg/plugin/http.go)
 
