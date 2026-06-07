@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -102,14 +105,51 @@ func stripMention(text, nick string) string {
 // plain-net dialer pointed at an in-process fake server.
 type dialer func(ctx context.Context, addr string) (net.Conn, error)
 
-// tlsDialer dials addr ("host:port") over TLS using the system roots.
+// tlsDialer dials addr ("host:port") over TLS, verifying the server against the PUBLIC
+// system roots, deliberately NOT whatever SSL_CERT_FILE points at. This bot dials the IRC
+// server DIRECTLY (not through goclaw's credential proxy), so it must trust the real public
+// CAs. In a goclaw deployment SSL_CERT_FILE is set to the proxy's intercept CA (so
+// proxy-routed HTTP plugins trust the proxy); if the IRC TLS dial honored it, the system
+// pool would be the proxy CA ALONE and verifying the real server cert (e.g. Libera's) would
+// fail. publicRootPool() loads the OS defaults with SSL_CERT_FILE/SSL_CERT_DIR neutralized.
 func tlsDialer(ctx context.Context, addr string) (net.Conn, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, fmt.Errorf("irc: bad server address %q: %w", addr, err)
 	}
-	d := &tls.Dialer{Config: &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}}
+	d := &tls.Dialer{Config: &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    publicRootPool(), // nil => Go's default, which would honor SSL_CERT_FILE
+	}}
 	return d.DialContext(ctx, "tcp", addr)
+}
+
+// publicRootPool returns the OS public CA pool (see loadPublicRootPool), computed once and
+// cached, so concurrent TLS dials share one load.
+var publicRootPool = sync.OnceValue(loadPublicRootPool)
+
+// loadPublicRootPool loads the OS public CA pool, ignoring the SSL_CERT_FILE / SSL_CERT_DIR
+// overrides (which a goclaw deployment points at the credential-proxy CA). SystemCertPool
+// reads those env vars first; we neutralize them for the call so it loads the OS trust
+// store, then restore them immediately. Returns nil on failure, which falls back to Go's
+// default verification (the safe direction: a real cert still verifies against the OS store).
+func loadPublicRootPool() *x509.CertPool {
+	file, hasFile := os.LookupEnv("SSL_CERT_FILE")
+	dir, hasDir := os.LookupEnv("SSL_CERT_DIR")
+	_ = os.Unsetenv("SSL_CERT_FILE")
+	_ = os.Unsetenv("SSL_CERT_DIR")
+	pool, err := x509.SystemCertPool()
+	if hasFile {
+		_ = os.Setenv("SSL_CERT_FILE", file)
+	}
+	if hasDir {
+		_ = os.Setenv("SSL_CERT_DIR", dir)
+	}
+	if err != nil {
+		return nil // fall back to Go default verification
+	}
+	return pool
 }
 
 // client is a connected IRC session: a conn plus a line reader/writer.

@@ -2,12 +2,81 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shindakun/goclawkit/pkg/plugin"
 )
+
+// loadPublicRootPool must IGNORE SSL_CERT_FILE (which a goclaw deployment points at the
+// credential-proxy CA): a direct TLS dial to the IRC server must verify against the real
+// public roots, not the proxy CA. This is the regression guard for the bug where the
+// proxy-env change made the IRC plugin trust only the proxy CA and fail to verify Libera.
+func TestLoadPublicRootPool_IgnoresSSLCertFileOverride(t *testing.T) {
+	// A self-signed CA standing in for the proxy CA an operator would put in SSL_CERT_FILE.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "fake-proxy-ca.test"},
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	caFile := filepath.Join(t.TempDir(), "fake-proxy-ca.pem")
+	if err := os.WriteFile(caFile, caPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: confirm THIS platform's SystemCertPool actually honors SSL_CERT_FILE, i.e. a
+	// naive (env-honoring) load WOULD trust the fake CA. Only then is there a regression for
+	// loadPublicRootPool to prevent. On macOS the system pool ignores SSL_CERT_FILE entirely
+	// (roots come from the Security framework), so there is nothing to catch: skip honestly
+	// rather than pretend the assertion has teeth. The Linux container (where the plugin
+	// runs, and CI) DOES honor it, so the real guard runs there.
+	t.Setenv("SSL_CERT_FILE", caFile)
+	naive, err := x509.SystemCertPool()
+	if err != nil {
+		t.Skipf("no system cert pool on this platform: %v", err)
+	}
+	if naive != nil {
+		if _, verr := caCert.Verify(x509.VerifyOptions{Roots: naive}); verr != nil {
+			t.Skip("this platform's SystemCertPool ignores SSL_CERT_FILE (e.g. macOS); the override regression cannot occur here, the Linux guard runs in CI")
+		}
+	}
+
+	// Here the platform honors the override, so the bug is possible. The fix is proven if the
+	// pool from loadPublicRootPool does NOT trust the fake CA (it loaded OS public roots, not
+	// the override). A buggy/env-honoring load would trust it and Verify would succeed.
+	pool := loadPublicRootPool()
+	if pool == nil {
+		t.Fatal("loadPublicRootPool returned nil where SystemCertPool succeeded")
+	}
+	if _, verr := caCert.Verify(x509.VerifyOptions{Roots: pool}); verr == nil {
+		t.Fatal("loadPublicRootPool trusted the SSL_CERT_FILE CA; it must ignore the override and use public roots")
+	}
+}
 
 func TestParsePrivMsg(t *testing.T) {
 	cases := []struct {
