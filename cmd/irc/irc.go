@@ -178,6 +178,10 @@ func connectAndRegister(ctx context.Context, dial dialer, addr, nick, channel st
 
 	// Read until the welcome numeric (001), answering PINGs that arrive during
 	// registration. Bound the wait so a dead server doesn't hang Start forever.
+	// A fatal server response (an ERROR line, or an error numeric like 465 "you are
+	// banned" / 464 / 433) is surfaced AS the error, not swallowed: otherwise the server
+	// closes the link and the next read returns a bare EOF, hiding the real reason (this
+	// cost a long debugging session when Libera IP-banned the bot and we only saw "EOF").
 	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	for {
 		line, err := c.readLine()
@@ -191,6 +195,10 @@ func connectAndRegister(ctx context.Context, dial dialer, addr, nick, channel st
 				return nil, err
 			}
 			continue
+		}
+		if msg, fatal := registrationError(line); fatal {
+			_ = conn.Close()
+			return nil, fmt.Errorf("irc: server refused registration: %s", msg)
 		}
 		if isWelcome(line) {
 			break
@@ -210,6 +218,52 @@ func isWelcome(line string) bool {
 	// ":server 001 nick :Welcome..."
 	parts := strings.SplitN(line, " ", 3)
 	return len(parts) >= 2 && parts[1] == "001"
+}
+
+// fatalRegNumerics are IRC error numerics that mean registration will NOT succeed, so the
+// connect attempt should fail with the server's reason rather than loop until EOF.
+//
+//	465 ERR_YOUREBANNEDCREEP  - banned from the server (e.g. a K-line / IP ban)
+//	464 ERR_PASSWDMISMATCH    - a server password is required/wrong
+//	463 ERR_NOPERMFORHOST     - host not allowed to connect
+//	466 ERR_YOUWILLBEBANNED   - about to be banned
+//	451 ERR_NOTREGISTERED     - server wants registration we didn't provide
+//	433 ERR_NICKNAMEINUSE     - nick already taken (we don't retry-with-suffix)
+//	432 ERR_ERRONEUSNICKNAME  - nick rejected as invalid
+var fatalRegNumerics = map[string]bool{
+	"465": true, "464": true, "463": true, "466": true,
+	"451": true, "433": true, "432": true,
+}
+
+// registrationError inspects a server line received during registration and reports whether
+// it is a FATAL response (so the caller surfaces it instead of looping into a bare EOF),
+// along with a human-readable message. An "ERROR" command (e.g. "ERROR :Closing Link: ...
+// Banned") and the fatalRegNumerics are treated as fatal; everything else is not.
+func registrationError(line string) (msg string, fatal bool) {
+	line = strings.TrimRight(line, "\r\n")
+	// "ERROR :<text>" is a server command, no leading ":prefix".
+	if rest, ok := strings.CutPrefix(line, "ERROR"); ok {
+		return "ERROR" + trailing(rest), true
+	}
+	// ":server <numeric> <nick> :<text>" - the numeric is the second token.
+	parts := strings.SplitN(line, " ", 4)
+	if len(parts) >= 2 && fatalRegNumerics[parts[1]] {
+		// Prefer the human trailing text (after the last " :"); fall back to the whole line.
+		if i := strings.Index(line, " :"); i >= 0 {
+			return parts[1] + " " + strings.TrimSpace(line[i+2:]), true
+		}
+		return line, true
+	}
+	return "", false
+}
+
+// trailing extracts the human text from an "ERROR :text" / " :text" remainder, returning a
+// leading-space-prefixed string (or the raw remainder if there is no " :").
+func trailing(rest string) string {
+	if i := strings.Index(rest, ":"); i >= 0 {
+		return " " + strings.TrimSpace(rest[i+1:])
+	}
+	return strings.TrimRight(rest, " ")
 }
 
 // pingToken returns the token of a server PING ("PING :token"), if line is one.

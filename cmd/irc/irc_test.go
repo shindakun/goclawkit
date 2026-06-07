@@ -78,6 +78,63 @@ func TestLoadPublicRootPool_IgnoresSSLCertFileOverride(t *testing.T) {
 	}
 }
 
+// registrationError must surface a server refusal (a 465 ban, an ERROR line) as fatal with
+// its human text, NOT let the caller loop into a bare "registration read: EOF" that hides
+// the reason. The 465 case is the real Libera ban that cost a long debug session.
+func TestRegistrationError(t *testing.T) {
+	cases := []struct {
+		name      string
+		line      string
+		wantFatal bool
+		wantMsg   string // substring that must appear when fatal
+	}{
+		{
+			name:      "libera 465 ban",
+			line:      ":calcium.libera.chat 465 goclaw :You are banned from this server- Your bot is not permitted to connect to Libera Chat.",
+			wantFatal: true,
+			wantMsg:   "banned",
+		},
+		{
+			name:      "ERROR closing link",
+			line:      "ERROR :Closing Link: 71.59.219.41 (*** Banned )",
+			wantFatal: true,
+			wantMsg:   "Banned",
+		},
+		{
+			name:      "nick in use 433",
+			line:      ":server 433 * goclaw :Nickname is already in use.",
+			wantFatal: true,
+			wantMsg:   "433",
+		},
+		{
+			name:      "welcome 001 is not fatal",
+			line:      ":server 001 goclaw :Welcome to the network",
+			wantFatal: false,
+		},
+		{
+			name:      "a NOTICE is not fatal",
+			line:      ":server NOTICE * :*** Checking Ident",
+			wantFatal: false,
+		},
+		{
+			name:      "a PING is not fatal",
+			line:      "PING :tolsun.oulu.fi",
+			wantFatal: false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			msg, fatal := registrationError(c.line)
+			if fatal != c.wantFatal {
+				t.Fatalf("fatal = %v, want %v (line %q -> msg %q)", fatal, c.wantFatal, c.line, msg)
+			}
+			if fatal && !strings.Contains(msg, c.wantMsg) {
+				t.Fatalf("msg = %q, want it to contain %q", msg, c.wantMsg)
+			}
+		})
+	}
+}
+
 func TestParsePrivMsg(t *testing.T) {
 	cases := []struct {
 		name   string
