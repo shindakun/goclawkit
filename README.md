@@ -48,18 +48,18 @@ owns the protocol, handshake, concurrency, and panic recovery, so you write only
 `Invoke`. A channel is the same idea with `plugin.Channel` (`Start`/`Send`) and
 `plugin.ServeChannel`.
 
-Build and run the worked dice-roller tool standalone (no host needed):
+The worked example plugins live in their own repos (each is a real, installable
+plugin, which is also how a third party would ship one):
 
-```sh
-go build -o roll ./cmd/roll
-./roll -selftest          # 2d6 -> [4, 5] = 9
-```
+- [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) — the worked **tool**
+  demo: a dice roller. `go build -o roll . && ./roll -selftest`.
+- [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) — the worked **channel**
+  demo: a dial-out IRC bridge.
 
-To INSTALL a plugin into goclaw, build it for **Linux** instead (plugins run in the
-agent's Linux container, so a host-platform binary fails with `exec format error`):
-`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o roll ./cmd/roll`, or use
-`scripts/build-plugin.sh`, which defaults to `linux/amd64`. See
-[`cmd/roll/README.md`](cmd/roll/README.md).
+To INSTALL a plugin into goclaw, build it for **Linux** (plugins run in the agent's
+Linux container, so a host-platform binary fails with `exec format error`):
+`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <name> .`, or use
+`scripts/build-plugin.sh`, which defaults to `linux/amd64`.
 
 ## Packaging and installing a plugin
 
@@ -70,9 +70,12 @@ is one subdir. `scripts/build-plugin.sh` stages a plugin (binary + its `plugin.y
 into `build/<name>/`, ready to copy into goclaw:
 
 ```sh
-scripts/build-plugin.sh roll      # -> build/roll/{roll, plugin.yml}
+scripts/build-plugin.sh webhook   # -> build/webhook/{webhook, plugin.yml}
 scripts/build-plugin.sh           # build every cmd/<name>/ that has a plugin.yml
 ```
+
+(Run from a plugin repo, this stages that repo's plugin; run in goclawkit it stages
+the bundled `cmd/webhook` example.)
 
 Secrets are never written into `plugin.yml`: it lists env var *names*; the host
 supplies the values at launch.
@@ -120,25 +123,30 @@ red flags even when only one subdir is built (see goclaw `docs/security.md`).
 
 ## Layout
 
-Following godoorkit, importable code lives under `pkg/` and runnable binaries
-(plugins) under `cmd/`:
+goclawkit is the SDK only. Following godoorkit, importable code lives under `pkg/`:
 
 - [`pkg/ipc/`](pkg/ipc/) — the shared wire protocol (frames, framing, the Session).
-- [`pkg/plugin/`](pkg/plugin/) — the author-facing SDK (`Tool`, `Channel`, `Serve`,
-  `ServeChannel`, `ServeTool`).
-- [`cmd/roll/`](cmd/roll/) — the worked **tool** demo (a dice roller).
-- [`cmd/webhook/`](cmd/webhook/) — the worked **channel** demo (an inbound HTTP
-  webhook gateway, authenticated and fail-closed).
+- [`pkg/plugin/`](pkg/plugin/) — the author-facing SDK (`Tool`, `Channel`, `Poller`,
+  `Serve`, `ServeChannel`, `ServePoll`, `ServeTool`, `HTTPClient`).
+- [`cmd/webhook/`](cmd/webhook/) — a bundled, ILLUSTRATIVE inbound-webhook channel
+  (kept to show the same contract over an inbound transport; see its README for why
+  the inbound model is off-strategy for goclaw's deployment).
+
+The worked tool and channel demos are their own repos:
+[`goclaw-roll`](https://github.com/shindakun/goclaw-roll) (tool) and
+[`goclaw-irc`](https://github.com/shindakun/goclaw-irc) (channel), each a real
+single-plugin repo you can clone, build, and install.
 
 ## Documentation
 
 - [`docs/sdk-spec.md`](docs/sdk-spec.md) — the SDK + wire-protocol reference: frame
   format, the tool and channel contracts, the `plugin.yml` schema, topic conventions.
   The authoritative contract.
-- [`cmd/roll/README.md`](cmd/roll/README.md) — build, run, register, and the wire
-  smoke test for the tool demo.
-- [`cmd/webhook/README.md`](cmd/webhook/README.md) — the channel demo, including its
-  inbound auth and identity model.
+- [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) /
+  [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) — the worked tool and channel
+  demos, each with its own build/run/register README.
+- [`cmd/webhook/README.md`](cmd/webhook/README.md) — the bundled inbound-webhook
+  example, including its inbound auth and identity model.
 
 The host side (the manifest walk, launching, supervision, hot add/reload) lives in
 goclaw at `docs/plugins-design.md`; goclawkit is only the plugin-author SDK plus the

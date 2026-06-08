@@ -7,7 +7,7 @@ exercising the `ServeChannel` runtime and the `channel.*` topics end to end.
 ## Channel, not tool: which direction is which
 
 A **tool** is agent-initiated: the LLM calls it, args go in, a result comes back
-(see [`cmd/roll/`](../roll/)). A **channel** is the opposite: messages arrive from
+(see [`goclaw-roll`](https://github.com/shindakun/goclaw-roll)). A **channel** is the opposite: messages arrive from
 the *outside world* unprompted, the agent replies, and the reply goes back out. The
 agent never "calls" a channel; the channel feeds the agent. That is the chat-gateway
 shape (Telegram, Discord, ...).

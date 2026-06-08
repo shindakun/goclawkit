@@ -136,7 +136,7 @@ func runPollLoop(ctx context.Context, p Poller, interval time.Duration, name str
 }
 
 // sleepCtx sleeps for d unless ctx is cancelled first; it reports false if cancelled.
-// (pkg/plugin's own copy; cmd/irc has an identical unexported one in package main.)
+// (pkg/plugin's own copy; a plugin's package main may have its own identical helper.)
 func sleepCtx(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()

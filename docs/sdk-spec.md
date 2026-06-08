@@ -3,9 +3,11 @@
 The authoritative contract for **goclaw plugins**: separate compiled binaries the
 goclaw side launches and talks to over stdio. It specifies the wire protocol, the
 tool and channel contracts, the `plugin.yml` manifest schema, and the topic
-conventions. The worked demos (`cmd/roll/` for a tool, `cmd/irc/` for a channel)
-implement it; their own READMEs cover build/run/register. Start at the repo
-[README](../README.md) for the overview; read this when you need the exact contract.
+conventions. The worked demos are their own repos
+([`goclaw-roll`](https://github.com/shindakun/goclaw-roll) for a tool,
+[`goclaw-irc`](https://github.com/shindakun/goclaw-irc) for a channel); their READMEs
+cover build/run/register. Start at the repo [README](../README.md) for the overview;
+read this when you need the exact contract.
 
 > Note on "the host" vs the launcher: this spec says "the host launches the plugin"
 > for brevity, but a plugin is launcher-AGNOSTIC. It speaks frames over stdin/stdout
@@ -41,8 +43,9 @@ keep these godoorkit properties true in goclawkit:
 
 - **The plugin IS the command.** Just as every godoorkit door is a standalone
   `cmd/<name>-door` binary the BBS launches ("your binary is the door, like
-  LORD.EXE"), a goclaw plugin is a standalone `cmd/<name>` binary the host launches.
-  The demo lives at `cmd/roll/`, never under `examples/`.
+  LORD.EXE"), a goclaw plugin is a standalone binary the host launches: its `main` is
+  the plugin, at a repo root (e.g. `goclaw-roll`) or under `cmd/<name>/` in a monorepo,
+  never under an `examples/` tree.
 - **A minimal interface; the framework owns the loop.** A godoorkit door implements
   a tight contract (`Init`/`Run`/`Cleanup`/`Info`) and `pkg/door` owns terminal
   state and lifecycle so the author "just reads input and writes output, no
@@ -61,9 +64,10 @@ If a future decision is unclear, prefer the option that keeps these true.
 The SDK covers two plugin kinds, both implemented:
 
 - **Tools** (request/response): `plugin.Tool` + `Serve`/`ServeTool`. Worked demo:
-  `cmd/roll/`.
+  the [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) repo (a dice roller).
 - **Channels** (long-lived, bidirectional): `plugin.Channel` + `ServeChannel`. Worked
-  demo: `cmd/irc/` (an IRC bridge that dials OUT). A POLL channel (inbound from polling
+  demo: the [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) repo (an IRC bridge
+  that dials OUT). A POLL channel (inbound from polling
   an upstream, e.g. Gmail) is a variant: implement `plugin.Poller` and call `ServePoll`,
   which owns the poll loop and adapts onto a channel (see "Poll channels"). A channel
   that calls an external HTTPS API should use `plugin.HTTPClient()` (see "Making external
@@ -102,21 +106,17 @@ goclawkit/
       serve_poll_test.go      drive ServePoll over in-memory pipes
       http.go                 HTTPClient(): proxy-correct *http.Client for external HTTPS
   cmd/
-    roll/                     the worked TOOL demo (dice roller)
-      main.go                 the plugin IS the command (godoorkit's cmd/<name>-door)
-      main_test.go            wire smoke test: exec the binary, drive hello+tool.invoke
-      plugin.yml              at-rest, pre-launch description the host reads (contract)
-      README.md               how to build + register in goclaw
-    irc/                      the worked CHANNEL demo (IRC bridge; dials OUT, no listener)
-      main.go                 ircChannel implements plugin.Channel; main calls ServeChannel
-      irc.go                  minimal stdlib IRC client (TLS dial, register, parse, send)
-      fakeircd.go             in-process fake IRC server for -selftest and tests
-      main_test.go            wire test over the binary against the fake ircd
-      plugin.yml              kind: channel (no slash command)
-      README.md               config, -selftest, the nick-spoof caveat
-    webhook/                  an ILLUSTRATIVE channel (INBOUND HTTP listener; see the
-                              demos section: its inbound model is off-strategy because a
-                              plugin's port is not reachable from outside the container)
+    webhook/                  a bundled ILLUSTRATIVE channel (INBOUND HTTP listener; see
+                              the demos section: its inbound model is off-strategy because
+                              a plugin's port is not reachable from outside the container)
+```
+
+The worked tool and channel demos are their OWN repos (each a real single-plugin
+repo, the same way a third party ships a plugin), not bundled here:
+
+```text
+github.com/shindakun/goclaw-roll/    the worked TOOL demo (dice roller)
+github.com/shindakun/goclaw-irc/     the worked CHANNEL demo (IRC bridge, dials OUT)
 ```
 
 Layout follows godoorkit exactly: importable code lives under `pkg/<name>/`
@@ -136,12 +136,12 @@ README "Two repo layouts" and goclaw `docs/security.md` (the whole repo is scann
 for a subdir build).
 
 The plugin is the command. Every godoorkit door is a standalone binary under
-`cmd/<name>-door/` that the BBS launches; goclaw launches a plugin the same way, so
-the demo lives at `cmd/roll/`, not under an `examples/` tree. The thin `main()`
-imports `pkg/plugin`, wires the tool, and calls `plugin.ServeTool`; the tool logic
-can live inline for a demo this small (godoorkit splits larger door logic into a
-`doors/<name>/` package, a pattern a real plugin can follow but the demo does not
-need).
+`cmd/<name>-door/` that the BBS launches; goclaw launches a plugin the same way, so a
+plugin's `main` is the binary (at a repo root like `goclaw-roll`, or under `cmd/<name>/`
+in a monorepo), not under an `examples/` tree. The thin `main()` imports `pkg/plugin`,
+wires the tool, and calls `plugin.ServeTool`; the tool logic can live inline for a small
+plugin (godoorkit splits larger door logic into a `doors/<name>/` package, a pattern a
+real plugin can follow but a small one does not need).
 
 No LICENSE for now (the host repo goclaw ships none either); add one later if the
 module is published.
@@ -560,7 +560,7 @@ These are new topics only; FrameType, the header, and ProtocolVer are unchanged.
 
 This applies only to a channel that accepts INBOUND connections (a listener). In
 goclaw's deployment a plugin runs in the agent's container, so an inbound port is not
-reachable from outside, which is exactly why the canonical channel (`cmd/irc/`) DIALS
+reachable from outside, which is exactly why the canonical channel (`goclaw-irc`) DIALS
 OUT instead. Prefer a dial-out channel; the guidance below is for the inbound case
 where it is unavoidable (the `cmd/webhook/` demo illustrates it).
 
@@ -670,32 +670,33 @@ unset (proxy off / dev mode) it leaves `RootCAs` nil so the system roots are use
 unchanged, so the same code is correct in both modes with no branching. The helper has
 NO OAuth or auth logic: credential injection lives entirely host-side in goclaw.
 
-## The worked demos (cmd/roll/, cmd/irc/, cmd/webhook/)
+## The worked demos (goclaw-roll, goclaw-irc, cmd/webhook/)
 
-Reference plugins exercise the SDK end to end. Each is a real, registerable plugin in
-its own `cmd/<name>/` directory (the plugin IS the command), with its own `plugin.yml`,
-`-selftest`, and an end-to-end wire test. The build/run/register details live in each
-plugin's README, not here, so this spec stays the general SDK reference.
+Reference plugins exercise the SDK end to end. The tool and channel demos are their
+OWN repos (each a real, installable single-plugin repo, the plugin IS the command),
+with their own `plugin.yml`, `-selftest`, and an end-to-end wire test. The
+build/run/register details live in each plugin's README, not here, so this spec stays
+the general SDK reference.
 
-- **`cmd/roll/`** — the worked TOOL demo: a dice roller (NdM notation), the smallest
-  thing that exercises typed args, input validation, and a returned result. See
-  [`cmd/roll/README.md`](../cmd/roll/README.md).
-- **`cmd/irc/`** — the worked CHANNEL demo and the canonical one: a minimal IRC bridge.
-  It DIALS OUT to an IRC server over TLS (stdlib only, no IRC library), joins a channel,
-  forwards messages that mention the bot or are sent to it directly up to the agent as
-  `Inbound`, and posts replies back as `Outbound`. This is the right shape for a goclaw
-  channel: the bot opens ONE outbound connection, so there is no inbound listener and no
-  open port. It owns reconnect-with-backoff and defers owner authorization to goclaw's
-  access gate (IRC nicks are spoofable without SASL, a documented caveat). See
-  [`cmd/irc/README.md`](../cmd/irc/README.md).
-- **`cmd/webhook/`** — an ILLUSTRATIVE channel, kept to show the SAME `ServeChannel`
-  contract with a different (inbound) transport, but it is OFF-STRATEGY for goclaw's
-  deployment: it runs an inbound HTTP listener, and a plugin runs inside the agent's
-  container, so its port is not reachable from the outside network and nothing can POST
-  to it. A real goclaw channel should DIAL OUT (like `cmd/irc/`) rather than listen.
-  webhook still authenticates inbound and pins identity per the inbound-channel-security
-  principle above, illustrating those defenses for any future inbound use. See
-  [`cmd/webhook/README.md`](../cmd/webhook/README.md).
+- **[`goclaw-roll`](https://github.com/shindakun/goclaw-roll)** — the worked TOOL demo:
+  a dice roller (NdM notation), the smallest thing that exercises typed args, input
+  validation, and a returned result.
+- **[`goclaw-irc`](https://github.com/shindakun/goclaw-irc)** — the worked CHANNEL demo
+  and the canonical one: a minimal IRC bridge. It DIALS OUT to an IRC server over TLS
+  (stdlib only, no IRC library), joins a channel, forwards messages that mention the bot
+  or are sent to it directly up to the agent as `Inbound`, and posts replies back as
+  `Outbound`. This is the right shape for a goclaw channel: the bot opens ONE outbound
+  connection, so there is no inbound listener and no open port. It owns
+  reconnect-with-backoff and defers owner authorization to goclaw's access gate (IRC
+  nicks are spoofable without SASL, a documented caveat).
+- **`cmd/webhook/`** (bundled in this repo) — an ILLUSTRATIVE channel, kept to show the
+  SAME `ServeChannel` contract with a different (inbound) transport, but it is
+  OFF-STRATEGY for goclaw's deployment: it runs an inbound HTTP listener, and a plugin
+  runs inside the agent's container, so its port is not reachable from the outside
+  network and nothing can POST to it. A real goclaw channel should DIAL OUT (like
+  `goclaw-irc`) rather than listen. webhook still authenticates inbound and pins
+  identity per the inbound-channel-security principle above, illustrating those defenses
+  for any future inbound use. See [`cmd/webhook/README.md`](../cmd/webhook/README.md).
 
 ## Plugin manifest (plugin.yml): the at-rest, pre-launch description
 
@@ -705,8 +706,8 @@ reads BEFORE launching to learn the plugin's kind, version, the env var NAMES it
 needs, and any slash command it registers. The runtime `hello` handshake remains the
 source of truth for the live tool list; `plugin.yml` is the at-rest description used
 before the process starts. The host parses it, so there is no Go code for it in the
-SDK, but the SDK is the natural home for the schema and the demo's example file
-(`cmd/roll/plugin.yml`).
+SDK, but the SDK is the natural home for the schema (each demo repo ships its own
+`plugin.yml` as a worked example).
 
 Schema:
 
@@ -837,16 +838,15 @@ Windows build will fail at launch with `exec format error` and the plugin will n
 load. Build for Linux:
 
 ```sh
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o roll ./cmd/roll
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <name> .
 ```
 
 Use `GOARCH=arm64` if the goclaw host runs an arm64 container engine. `build-plugin.sh`
 defaults its target to `linux/amd64` for exactly this reason (override `GOOS`/`GOARCH`
-to match a different container arch). The plain `go build -o roll ./cmd/roll` shown
-in the quickstart produces a binary for the author's platform and is fine ONLY for
-`-selftest`/local development; it will not run inside goclaw unless that platform is
-linux. Pure-Go plugins (stdlib only, as the SDK core is) cross-compile cleanly with
-`CGO_ENABLED=0`.
+to match a different container arch). A plain `go build` produces a binary for the
+author's platform and is fine ONLY for `-selftest`/local development; it will not run
+inside goclaw unless that platform is linux. Pure-Go plugins (stdlib only, as the SDK
+core is) cross-compile cleanly with `CGO_ENABLED=0`.
 
 ## Notes for the host side (goclaw), not built here
 
