@@ -61,29 +61,30 @@ If a future decision is unclear, prefer the option that keeps these true.
 
 ## Scope
 
-The SDK covers two plugin kinds, both implemented:
+The SDK covers two plugin kinds (`Kind` is `tool` or `channel`), both implemented:
 
 - **Tools** (request/response): `plugin.Tool` + `Serve`/`ServeTool`. Worked demo:
   the [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) repo (a dice roller).
 - **Channels** (long-lived, bidirectional): `plugin.Channel` + `ServeChannel`. Worked
   demo: the [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) repo (an IRC bridge
-  that dials OUT). A POLL channel (inbound from polling
-  an upstream, e.g. Gmail) is a variant: implement `plugin.Poller` and call `ServePoll`,
-  which owns the poll loop and adapts onto a channel (see "Poll channels"). A channel
-  that calls an external HTTPS API should use `plugin.HTTPClient()` (see "Making external
-  HTTPS calls").
+  that dials OUT). A POLL channel (inbound from polling an upstream, e.g. Gmail) is a
+  variant of the channel kind: implement `plugin.Poller` and call `ServePoll`, which
+  owns the poll loop and adapts onto a channel (see "Poll channels").
+
+A plugin that calls an external HTTPS API should use `plugin.HTTPClient()` (see "Making
+external HTTPS calls").
 
 Both ride the same frame format; a channel adds only new topics, never a wire-format
 change. What is deliberately NOT here: Layer 2 (the cross-plugin socket coordination
-bus) is still deferred (see the two-layers section), and the host side (manifest walk,
-launching, supervision, hot reload) lives in goclaw, not this SDK.
+bus) is still deferred (see the two-layers section), and the host side (the plugins
+directory walk, launching, supervision, hot reload) lives in goclaw, not this SDK.
 
 ## Repository layout
 
 ```text
 goclawkit/
   go.mod                      module github.com/shindakun/goclawkit
-  .gitignore                  Go build output, the example binary, editor/OS noise
+  .gitignore                  test/coverage output, editor/OS noise (SDK-only module)
   README.md                   short: what it is, link to docs/sdk-spec.md, quickstart
   docs/
     sdk-spec.md               this file: the SDK + wire-protocol reference
@@ -114,13 +115,14 @@ github.com/shindakun/goclaw-roll/    the worked TOOL demo (dice roller)
 github.com/shindakun/goclaw-irc/     the worked CHANNEL demo (IRC bridge, dials OUT)
 ```
 
-Layout follows godoorkit exactly: importable code lives under `pkg/<name>/`
-(godoorkit has `pkg/door`, `pkg/ipc`, ...) and runnable binaries under `cmd/<name>/`
-(godoorkit has `cmd/<name>-door`). We mirror the same split: `pkg/ipc` is the shared
-wire protocol (the parallel to godoorkit's `pkg/ipc`), and `pkg/plugin` is the
-author-facing SDK (the parallel to `pkg/door`). `pkg/plugin` imports `pkg/ipc` for
-the frame types. A plugin author imports `github.com/shindakun/goclawkit/pkg/plugin`
-(and rarely `pkg/ipc` directly).
+Layout follows godoorkit's `pkg/` split: importable code lives under `pkg/<name>/`
+(godoorkit has `pkg/door`, `pkg/ipc`, ...). goclawkit mirrors it: `pkg/ipc` is the
+shared wire protocol (the parallel to godoorkit's `pkg/ipc`), and `pkg/plugin` is the
+author-facing SDK (the parallel to `pkg/door`). `pkg/plugin` imports `pkg/ipc` for the
+frame types. A plugin author imports `github.com/shindakun/goclawkit/pkg/plugin` (and
+rarely `pkg/ipc` directly). The runnable-binary half of the convention (a plugin's
+`main` under `cmd/<name>/`, godoorkit's `cmd/<name>-door`) lives in the PLUGIN's repo,
+not here, goclawkit ships no binaries.
 
 An author's OWN plugin repo follows the same `cmd/<name>/` convention, and a single
 repo MAY ship several plugins that share a `go.mod` and an `internal/` (e.g. a service's
@@ -260,18 +262,17 @@ onto behavior:
   SAME ID and an empty payload. v1 models the reply even though nothing depends on
   it yet, so adding host-side liveness checks later needs no plugin change. A plugin
   must never originate a heartbeat; it only answers one.
-- LATER, a channel inbound message is `FrameEvent` `Topic="channel.inbound"`; an
-  outbound send is `FrameRequest` `Topic="channel.send"` with a `FrameResult`; a
-  typing action is `FrameRequest` `Topic="channel.action"`. None of these need a
-  new FrameType or a version bump; they are just new topics. This is the
+- A channel inbound message is `FrameEvent` `Topic="channel.inbound"`; an outbound
+  send is `FrameRequest` `Topic="channel.send"` with a `FrameResult`; a typing action
+  is `FrameRequest` `Topic="channel.action"`. None of these needed a new FrameType or
+  a version bump when channels landed; they are just new topics. This is the
   extensibility guarantee, in action.
 
 ### Topic namespace convention
 
 Dot-namespaced, `area.verb`. Reserve these areas: `hello`, `shutdown`,
-`heartbeat` (control); `tool.*` (tool plugins); `channel.*` (channel plugins,
-later); `host.*` (reserved for plugin-to-host callbacks later, e.g.
-`host.get_config`). A plugin receiving an UNKNOWN topic must reply (for a Request)
+`heartbeat` (control); `tool.*` (tool plugins); `channel.*` (channel plugins);
+`host.*` (reserved for plugin-to-host callbacks later, e.g. `host.get_config`). A plugin receiving an UNKNOWN topic must reply (for a Request)
 with an error Result, or ignore it (for an Event), never crash. The host does the
 same. Unknown-topic tolerance is what lets a newer peer talk to an older one.
 
@@ -318,13 +319,15 @@ type Kind string
 
 const (
     KindTool    Kind = "tool"
-    KindChannel Kind = "channel" // LATER
+    KindChannel Kind = "channel"
 )
 
 type Info struct {
     Name        string `json:"name"`         // stable id, e.g. "roll"
     Kind        Kind   `json:"kind"`
-    Version     string `json:"version"`      // the plugin's own version, free-form
+    Version     string `json:"version"`      // the plugin's own version: semver,
+                                             // bumped on any behavior change (see the
+                                             // plugin.yml schema)
     ProtocolVer int    `json:"protocol_ver"` // must equal ipc.ProtocolVer
     // Tools advertises the tool names + descriptions this plugin exposes, so the
     // host can present them to the agent without invoking anything. Empty for a
@@ -631,6 +634,16 @@ plugin needs it.)
 Author rule: for a channel whose inbound comes from polling, implement `Poller` and call
 `ServePoll`; you write only `Poll` and `Send`.
 
+> **Direction note (planned, not yet built).** `Poller` has a `Send`, so it models a poll
+> source that ALSO has a reply path (Gmail: you reply by email). A one-way poll SOURCE,
+> a feed you read but cannot reply to (RSS, a status page, a "new event" signal), has no
+> reply path, so a forced no-op `Send` is the wrong shape. The planned fix is a separate
+> `Source` kind: `Info` + `Interval` + `Poll` only (NO `Send`), run by a `ServeSource`
+> that reuses this same poll loop. A Source PRODUCES signals; routing them to a session
+> (and any human-visible relay) is the host's job, not the plugin's. Until `Source` lands,
+> `Poller` is the only poll abstraction, and the RSS example above is transitional, a true
+> RSS plugin will be a `Source`, not a `Poller`.
+
 ## Making external HTTPS calls (pkg/plugin/http.go)
 
 A tool or channel that calls an external HTTPS API (Gmail, a weather API, any poll
@@ -699,10 +712,10 @@ Schema:
 
 ```yaml
 name: roll                 # stable id; MUST match Info.Name from the handshake
-kind: tool                 # "tool" now ("channel" later); MUST match Info.Kind
-version: "1.0.0"           # the plugin's own version; MUST match Info.Version
+kind: tool                 # "tool" or "channel"; MUST match Info.Kind
+version: "1.0.0"           # semver, bumped on change; MUST match Info.Version
 author: shindakun          # plugin author (free-form); shown in plugin listings
-url: https://github.com/shindakun/goclawkit  # plugin source/home (git or web)
+git: https://github.com/shindakun/goclaw-roll  # source repo; /plugin add builds from here
 exec: roll                 # built binary, relative to this plugin dir
 description: Roll dice in NdM notation (e.g. 2d6).
 command: roll              # registers the /roll slash command; omit for no command
@@ -713,10 +726,16 @@ Rules:
 
 - `name`/`kind`/`version` MUST agree with what the plugin reports in its handshake
   `Info`. Keep them in sync (for roll: `roll` / `tool` / `1.0.0`).
-- `author` and `url` are free-form, at-rest metadata for plugin listings (the source
-  or home of the plugin). They are NOT part of the handshake `Info` and the SDK does
-  not read them; the host shows them in `/plugin list`-style output. `url` may be a
-  git remote or a web page.
+- `version` MUST be **semver** (`MAJOR.MINOR.PATCH`, no `v` prefix; the `v` belongs on
+  a release tag, not in the manifest) and MUST be bumped on any behavior change: PATCH
+  for a fix, MINOR for a backward-compatible capability, MAJOR for a breaking change to
+  the plugin's tools/inputs/behavior. A version that does not move across a real change
+  is a BUG: it makes the manifest-version update signal lie. (See
+  `plugin-versioning-and-releases-handoff.md` for the release-tag and update story.)
+- `author` and `git` are at-rest provenance for plugin listings. They are NOT part of
+  the handshake `Info` and the SDK does not read them; the host shows `author` in
+  `/plugin list`-style output, and `git` is the source URL `/plugin add` builds or
+  pulls from (and what `/plugin update` re-fetches).
 - `env` lists NAMES only; the host supplies values from its own config at launch.
   NEVER put a secret value in `plugin.yml`.
 - Enable/disable is HOST-owned state kept OUT of `plugin.yml` (a host sidecar), so
@@ -815,19 +834,21 @@ directory, the per-plugin layout the host walks.
 
 ## Notes for the host side (goclaw), not built here
 
-The goclaw side (separate work, tracked in goclaw's `docs/plugins-design.md`):
-reads a `plugins.yaml` manifest, launches each enabled plugin with
+The goclaw side (separate work, tracked in goclaw's `docs/plugins-design.md`): walks a
+`plugins/` directory (the directory IS the registry, there is no central
+`plugins.yaml`), reads each subdir's `plugin.yml`, launches the binary with
 `exec.CommandContext`, performs the hello handshake over the Layer 1 frame protocol
-(the plugin's stdin/stdout), and for a tool plugin registers its advertised tools
-so the agent can call them; an `fsnotify` watch on the manifest gives hot add /
-reconfigure by diffing desired-vs-running and killing/launching processes. Tokens a
-plugin needs are passed in its environment by the host (never written into the
-manifest); the credential proxy can front them later. None of that is built in
-goclawkit; goclawkit is only the plugin-author SDK plus the shared protocol.
+(the plugin's stdin/stdout), and registers a tool plugin's advertised tools (and any
+slash command) so the agent or a user can call them; an `fsnotify` watch on the
+directory gives hot add/remove by diffing desired-vs-running and launching/stopping
+processes. Tokens a plugin needs are passed in its environment by the host (never
+written into the manifest); the credential proxy fronts an OAuth credential. None of
+that is built in goclawkit; goclawkit is only the plugin-author SDK plus the shared
+protocol.
 
-Layer 2 (the `pkg/ipc`-style socket coordination bus) is explicitly out of scope
-for this deliverable. Do NOT build it now. It is recorded here only so the frame
-format and the `Transport` interface stay compatible with it: when goclaw later
-needs plugin-to-plugin or plugin-to-host coordination, it adds a Dial/Listen-based
-`Transport` carrying these same frames, plus a small host-side hub/registry
-(mirroring godoorkit's `pkg/ipc`). No wire-format change, no change to Layer 1.
+Layer 2 (the `pkg/ipc`-style socket coordination bus) is out of scope and unbuilt. It
+is recorded here only so the frame format and the `Transport` interface stay compatible
+with it: when goclaw later needs plugin-to-plugin or plugin-to-host coordination, it
+adds a Dial/Listen-based `Transport` carrying these same frames, plus a small host-side
+hub/registry (mirroring godoorkit's `pkg/ipc`). No wire-format change, no change to
+Layer 1.
