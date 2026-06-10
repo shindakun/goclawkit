@@ -1,12 +1,17 @@
 # Plugin versioning and releases: goclawkit handoff
 
-Status: HANDOFF / not started. This is the goclawkit (author-facing) half of goclaw's
-plugin-update design. The goclaw side (the RFC for HOW the host detects and surfaces
-updates, never auto-applying) is `goclaw/docs/plugin-updates.md`; read it first, this doc
-assumes it. goclaw owns the MECHANISM (provenance, checking, the operator surface);
-goclawkit owns the CONVENTION plugin authors follow so that mechanism has something reliable
-to check against. This doc specifies that convention and the one real design decision it
-forces (per-plugin tags in a multi-plugin repo).
+Status: MOSTLY LANDED. The CONVENTION this doc specifies now lives in `docs/sdk-spec.md`
+(semver `version`; bare `v<semver>` release tags; the `@<ref>` install pin; the
+`CHANGELOG.md` convention), and the matching host-side notes are in
+`goclaw/docs/plugin-updates.md`. The tag-grammar decision (section 3) is SETTLED: one plugin
+per repo, so a bare `v<semver>` tag is unambiguous and no per-plugin namespacing is needed.
+Remaining: the optional version-bump CI lint (section 5), and cutting the first real tags /
+bumping the gmail plugins (section 6, items 5-6) once goclaw-gmail is split into one-plugin
+repos. This doc is kept as the rationale record.
+
+The goclaw side (the RFC for HOW the host detects and surfaces updates, never auto-applying)
+is `goclaw/docs/plugin-updates.md`. goclaw owns the MECHANISM (provenance, checking, the
+operator surface); goclawkit owns the CONVENTION plugin authors follow.
 
 ## 0. Why goclawkit has to do anything here
 
@@ -183,10 +188,12 @@ This catches the "tagged v1.3.0 but forgot to bump the manifest" mistake.
 - Do NOT auto-bump versions or auto-tag in the SDK. Releasing is a deliberate author action,
   same principle as goclaw never auto-applying an update.
 
-## 8. The single most important decision to leave this handoff with
+## 8. The decision this handoff turned on (RESOLVED)
 
-**Ratify the tag grammar (section 3): `<plugin>/v<semver>` path-prefixed tags, with a bare
-`v<semver>` allowed only for single-plugin-at-root repos.** Everything else (docs, lints,
-the `@<ref>` notation, goclaw's checker) keys off that grammar, and the multi-plugin
-`goclaw-gmail` repo is already a case that a flat tag cannot describe, so it cannot be
-deferred.
+The tag grammar (section 3) was the one thing everything else keyed off. RESOLVED in favor
+of **one plugin per repo, bare `v<semver>` tags**, NOT the path-prefixed `<plugin>/v<semver>`
+form: the multi-plugin case is avoided by structure (each plugin gets its own repo) rather
+than by a namespacing grammar. The example plugins were already split out this way
+(`goclaw-roll`, `goclaw-irc`, `goclaw-webhook`); `goclaw-gmail` (two plugins, one repo) is
+to be split likewise. With no monorepos, a flat `v<semver>` is unambiguous, and goclaw's
+checker needs only the one grammar. Documented in `docs/sdk-spec.md` ("Releasing a plugin").

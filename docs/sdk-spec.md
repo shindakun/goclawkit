@@ -787,6 +787,63 @@ Field notes (each is a provider FACT, look it up in the provider's OAuth2 docs):
   / `--scopes` at `add-oauth` time (e.g. for a self-hosted instance), so declare the
   common case and let overrides handle the edges.
 
+## Releasing a plugin (version, tags, install pins)
+
+A plugin is distributed as a git repo, there is no plugin registry. An operator installs
+it with `/plugin add <git-url>`; goclaw clones, scans, builds, and stages it. Releasing is
+how an author marks a point in that repo as a blessed version, and how an operator pins to
+it. This is a deliberate author action (like goclaw never auto-applying an update); the SDK
+defines only the CONVENTION.
+
+### The version field is the at-rest signal
+
+`plugin.yml` `version` is semver, bumped on every behavior change (see the manifest schema
+above). goclaw's update check (`docs/plugin-updates.md`) compares the installed `version`
+against the upstream `version` at the checked ref: a bump is a deliberate "new release"
+signal. A version that does not move across a real change makes that signal lie, so the
+bump is mandatory, not optional.
+
+### Release tags are the blessed signal: `v<semver>`
+
+A release is a semver git tag of the form **`v<semver>`** (e.g. `v1.3.0`), one tag line per
+repo. The `v` lives on the tag; `plugin.yml` holds the bare semver (`1.3.0`), and the two
+MUST correspond, a `v1.3.0` tag means `version: "1.3.0"` in the manifest at that commit.
+
+A tag is the STRONGEST update signal: it is explicit, immutable, and pins exactly what an
+update would install (a tag, not a moving branch). goclaw's check prefers the latest semver
+tag (`git ls-remote --tags`, highest semver) and falls back to the manifest `version` for a
+repo with no tags. There is NO commit-drift signal: an author who publishes neither a tag
+nor a version bump simply advertises no update (rather than every README edit reading as
+"update available").
+
+One plugin per repo, so a bare `v<semver>` is unambiguous, the tag names the repo's single
+plugin. (A repo that ships several plugins from one `go.mod` would need a per-plugin tag
+prefix to disambiguate; that is out of scope here, the convention is one plugin per repo.)
+
+### Install-by-ref notation
+
+An operator may pin the install/update to a specific ref:
+
+```text
+/plugin add <git-url>@<ref>          # one plugin at the repo root
+/plugin add <git-url>#<subdir>@<ref> # a subdir within the repo
+```
+
+- `<ref>` is a release tag (`v1.3.0`) or a raw commit sha (to pin without a release).
+- No `@<ref>` means the default branch HEAD (today's behavior), which gets only the WEAKER
+  manifest-version signal and should be discouraged in favor of a tag.
+- `/plugin update <name>` re-installs at the newer tag the check reported, through the full
+  sandbox (an update is re-vetted untrusted code, not a fast path).
+
+Author guidance: cut a `v<semver>` tag per release and keep `plugin.yml` `version` in step,
+so the plugin gets precise tag-based update checks. Steer operators to install by tag.
+
+### CHANGELOG.md (recommended, not required)
+
+A plugin SHOULD keep a `CHANGELOG.md` with a section per version (Keep a Changelog style is
+fine), so goclaw's update check can show WHAT changed, not just that something did. It is
+recommended, not enforced, the version bump and tag are the load-bearing signals.
+
 ## Two ways a tool is triggered (agent invoke and slash command)
 
 A plugin's tool is reachable by two host paths, and BOTH end at the exact same
