@@ -807,13 +807,15 @@ The manifest `version` MUST agree with the version the binary reports in its han
 `Info.Version`. The SDK makes that checkable: every runtime (`Serve`, `ServeChannel`,
 `ServePoll`) handles a **`-version`** flag, running the binary with `-version` (or
 `--version`) prints the bare semver and exits 0, before it blocks on the host handshake.
-No author wiring is needed; it is built into the runtimes. A release tool can therefore
-build the binary, run `./<name> -version`, and assert it equals the `plugin.yml` `version`
-and the tag, so the three never drift.
+No author wiring is needed; it is built into the runtimes.
 
 ```sh
 ./roll -version   # -> 1.0.0
 ```
+
+So before tagging a release you can confirm the three agree, build the binary, run
+`./<name> -version`, and check it equals `plugin.yml` `version` and the tag you are about
+to cut. Today that is a manual (or CI) check; there is no release tool in goclawkit.
 
 ### Release tags are the blessed signal: `v<semver>`
 
