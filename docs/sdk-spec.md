@@ -803,6 +803,18 @@ against the upstream `version` at the checked ref: a bump is a deliberate "new r
 signal. A version that does not move across a real change makes that signal lie, so the
 bump is mandatory, not optional.
 
+The manifest `version` MUST agree with the version the binary reports in its handshake
+`Info.Version`. The SDK makes that checkable: every runtime (`Serve`, `ServeChannel`,
+`ServePoll`) handles a **`-version`** flag, running the binary with `-version` (or
+`--version`) prints the bare semver and exits 0, before it blocks on the host handshake.
+No author wiring is needed; it is built into the runtimes. A release tool can therefore
+build the binary, run `./<name> -version`, and assert it equals the `plugin.yml` `version`
+and the tag, so the three never drift.
+
+```sh
+./roll -version   # -> 1.0.0
+```
+
 ### Release tags are the blessed signal: `v<semver>`
 
 A release is a semver git tag of the form **`v<semver>`** (e.g. `v1.3.0`), one tag line per

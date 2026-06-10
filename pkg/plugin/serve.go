@@ -59,6 +59,7 @@ var ErrHandshake = errors.New("goclawkit/plugin: handshake failed")
 // pipe, a file, /dev/null) stays silent, so host launches and scripts are
 // unaffected.
 func Serve(ts ToolSet) error {
+	maybePrintVersion(ts.Version)
 	if stdinIsTTY() {
 		name := ts.Name
 		if name == "" {
@@ -92,6 +93,34 @@ func stdinIsTTY() bool {
 // plugin's main is one line: plugin.ServeTool(myTool{}, "name", "1.0.0").
 func ServeTool(t Tool, name, version string) error {
 	return Serve(ToolSet{Name: name, Version: version, Tools: []Tool{t}})
+}
+
+// maybePrintVersion handles the `-version`/`--version` flag uniformly for every
+// runtime: if it is present in os.Args, print the plugin's bare semver and exit 0,
+// BEFORE blocking on the host handshake. This gives every plugin `./plugin -version`
+// with zero author boilerplate, and a release tool can read it to verify the binary's
+// version matches its plugin.yml.
+func maybePrintVersion(version string) {
+	if wantsVersionFlag(os.Args[1:]) {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+}
+
+// wantsVersionFlag reports whether args (os.Args[1:]) requests the version. It scans
+// raw args rather than the flag package so it works regardless of how (or whether) the
+// plugin's own main called flag.Parse, and stops at an explicit `--` end-of-flags
+// marker so a tool argument named "-version" after "--" is not mistaken for the flag.
+func wantsVersionFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "-version" || a == "--version" {
+			return true
+		}
+	}
+	return false
 }
 
 // serve is the testable core: it takes an explicit Transport instead of stdio.

@@ -248,3 +248,27 @@ type rwc struct {
 
 func (x rwc) Read(p []byte) (int, error)  { return x.r.Read(p) }
 func (x rwc) Write(p []byte) (int, error) { return x.w.Write(p) }
+
+func TestWantsVersionFlag(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"no args", nil, false},
+		{"-version", []string{"-version"}, true},
+		{"--version", []string{"--version"}, true},
+		{"-version among others", []string{"-x", "-version", "-y"}, true},
+		{"only -selftest", []string{"-selftest"}, false},
+		{"unrelated flags", []string{"-selftest", "-notation", "2d6"}, false},
+		{"-version after -- is a tool arg, not the flag", []string{"--", "-version"}, false},
+		{"-version before -- still counts", []string{"-version", "--", "x"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := wantsVersionFlag(tc.args); got != tc.want {
+				t.Errorf("wantsVersionFlag(%v) = %v, want %v", tc.args, got, tc.want)
+			}
+		})
+	}
+}

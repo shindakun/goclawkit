@@ -41,6 +41,7 @@ type Action struct {
 // prints a one-line hint to stderr first (so the handshake wait does not look like a
 // hang); a non-TTY stdin stays silent.
 func ServeChannel(ch Channel) error {
+	maybePrintVersion(ch.Info().Version)
 	if stdinIsTTY() {
 		name := ch.Info().Name
 		if name == "" {
