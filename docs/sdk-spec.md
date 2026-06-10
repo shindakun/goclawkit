@@ -858,6 +858,20 @@ A plugin SHOULD keep a `CHANGELOG.md` with a section per version (Keep a Changel
 fine), so goclaw's update check can show WHAT changed, not just that something did. It is
 recommended, not enforced, the version bump and tag are the load-bearing signals.
 
+### A reference Makefile
+
+[`docs/plugin.Makefile`](plugin.Makefile) is a copy-this-into-your-repo Makefile that
+makes the above one-command and drift-proof. It is self-contained (no goclawkit dependency
+at release time); set `NAME` to your plugin and you get:
+
+- `make bump VERSION=x.y.z` — edit `plugin.yml` `version` and commit it.
+- `make release` — tag `v<version>` for the version ALREADY in `plugin.yml` (no bump),
+  AFTER building the binary and asserting `./<name> -version` equals the manifest (so the
+  manifest, the code, and the tag cannot drift). `PUSH=1` also pushes the tag.
+
+A repo whose `plugin.yml` is already at `1.0.0` but never tagged just runs `make release`
+to cut `v1.0.0`, no bump. The example plugin repos each carry a copy.
+
 ## Two ways a tool is triggered (agent invoke and slash command)
 
 A plugin's tool is reachable by two host paths, and BOTH end at the exact same

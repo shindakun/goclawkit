@@ -129,8 +129,11 @@ single-plugin repo you can clone, build, and install.
 ## Documentation
 
 - [`docs/sdk-spec.md`](docs/sdk-spec.md) — the SDK + wire-protocol reference: frame
-  format, the tool and channel contracts, the `plugin.yml` schema, topic conventions.
-  The authoritative contract.
+  format, the tool and channel contracts, the `plugin.yml` schema, topic conventions,
+  and how to version/release a plugin. The authoritative contract.
+- [`docs/plugin.Makefile`](docs/plugin.Makefile) — a copy-this-into-your-repo Makefile
+  for building and releasing a plugin (`make bump` / `make release`, drift-checked via
+  the SDK's `-version` flag). See sdk-spec "Releasing a plugin".
 - [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) /
   [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) — the worked tool and channel
   demos, each with its own build/run/register README.
