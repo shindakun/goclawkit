@@ -803,19 +803,33 @@ against the upstream `version` at the checked ref: a bump is a deliberate "new r
 signal. A version that does not move across a real change makes that signal lie, so the
 bump is mandatory, not optional.
 
-The manifest `version` MUST agree with the version the binary reports in its handshake
-`Info.Version`. The SDK makes that checkable: every runtime (`Serve`, `ServeChannel`,
-`ServePoll`) handles a **`-version`** flag, running the binary with `-version` (or
-`--version`) prints the bare semver and exits 0, before it blocks on the host handshake.
-No author wiring is needed; it is built into the runtimes.
+The manifest `version` MUST agree with the version the binary reports (its
+`Info.Version`). The SDK makes that checkable with `plugin.HandleVersionFlag(version)`:
+a plugin's `main` calls it at the very TOP, before its own `flag.Parse()`, and then
+`./<plugin> -version` (or `--version`) prints the bare semver and exits 0.
+
+```go
+func main() {
+    plugin.HandleVersionFlag(version) // MUST be before flag.Parse()
+    selftest := flag.Bool("selftest", false, "...")
+    flag.Parse()
+    // ...
+}
+```
 
 ```sh
 ./roll -version   # -> 1.0.0
 ```
 
-So before tagging a release you can confirm the three agree, build the binary, run
+This is the one line the author wires; it can NOT live inside `Serve`/`ServeChannel`/
+`ServePoll`, because the plugin's own `flag.Parse()` runs first and would reject the
+unknown `-version` flag before the runtime is reached. So call `HandleVersionFlag` ahead
+of any flag parsing.
+
+Before tagging a release you can then confirm the three agree, build the binary, run
 `./<name> -version`, and check it equals `plugin.yml` `version` and the tag you are about
-to cut. Today that is a manual (or CI) check; there is no release tool in goclawkit.
+to cut (the reference Makefile's `release` target does exactly this). Today that is a
+manual (or `make release`) check; there is no standalone release tool in goclawkit.
 
 ### Release tags are the blessed signal: `v<semver>`
 

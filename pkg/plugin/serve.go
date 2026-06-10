@@ -59,7 +59,6 @@ var ErrHandshake = errors.New("goclawkit/plugin: handshake failed")
 // pipe, a file, /dev/null) stays silent, so host launches and scripts are
 // unaffected.
 func Serve(ts ToolSet) error {
-	maybePrintVersion(ts.Version)
 	if stdinIsTTY() {
 		name := ts.Name
 		if name == "" {
@@ -95,22 +94,32 @@ func ServeTool(t Tool, name, version string) error {
 	return Serve(ToolSet{Name: name, Version: version, Tools: []Tool{t}})
 }
 
-// maybePrintVersion handles the `-version`/`--version` flag uniformly for every
-// runtime: if it is present in os.Args, print the plugin's bare semver and exit 0,
-// BEFORE blocking on the host handshake. This gives every plugin `./plugin -version`
-// with zero author boilerplate, and a release tool can read it to verify the binary's
-// version matches its plugin.yml.
-func maybePrintVersion(version string) {
+// HandleVersionFlag implements `-version`/`--version`: if either is in os.Args, it prints
+// the plugin's bare semver and exits 0. A plugin's main MUST call this at the very top,
+// BEFORE its own flag.Parse(), e.g.:
+//
+//	func main() {
+//	    plugin.HandleVersionFlag(version) // before any flag parsing
+//	    selftest := flag.Bool("selftest", false, "...")
+//	    flag.Parse()
+//	    ...
+//	}
+//
+// It cannot live inside Serve/ServeChannel/ServePoll: the plugin's flag.Parse() runs
+// first and would reject the unknown -version flag (os.Exit(2)) before the runtime is
+// reached. So this is the one line a plugin author wires; the runtimes do not handle it.
+// A release tool can run `./<plugin> -version` and assert it equals the plugin.yml
+// version (see docs "Releasing a plugin").
+func HandleVersionFlag(version string) {
 	if wantsVersionFlag(os.Args[1:]) {
 		fmt.Println(version)
 		os.Exit(0)
 	}
 }
 
-// wantsVersionFlag reports whether args (os.Args[1:]) requests the version. It scans
-// raw args rather than the flag package so it works regardless of how (or whether) the
-// plugin's own main called flag.Parse, and stops at an explicit `--` end-of-flags
-// marker so a tool argument named "-version" after "--" is not mistaken for the flag.
+// wantsVersionFlag reports whether args (os.Args[1:]) requests the version. It scans raw
+// args (not the flag package) and stops at an explicit `--` end-of-flags marker so a tool
+// argument named "-version" after "--" is not mistaken for the flag.
 func wantsVersionFlag(args []string) bool {
 	for _, a := range args {
 		if a == "--" {
