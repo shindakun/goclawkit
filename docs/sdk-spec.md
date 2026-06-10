@@ -87,9 +87,6 @@ goclawkit/
   README.md                   short: what it is, link to docs/sdk-spec.md, quickstart
   docs/
     sdk-spec.md               this file: the SDK + wire-protocol reference
-  scripts/
-    build-plugin.sh           build a plugin (binary + its plugin.yml) into a
-                              build/<name>/ staging dir ready to copy into goclaw
   pkg/
     ipc/                      package ipc: the shared wire protocol
       proto.go                frame header, types, topics, framing, Session, Transport
@@ -105,11 +102,9 @@ goclawkit/
       serve_poll.go           ServePoll(): poll-channel runtime (a thin Channel adapter)
       serve_poll_test.go      drive ServePoll over in-memory pipes
       http.go                 HTTPClient(): proxy-correct *http.Client for external HTTPS
-  cmd/
-    webhook/                  a bundled ILLUSTRATIVE channel (INBOUND HTTP listener; see
-                              the demos section: its inbound model is off-strategy because
-                              a plugin's port is not reachable from outside the container)
 ```
+
+goclawkit is the SDK only; it bundles no plugins (no `cmd/`).
 
 The worked tool and channel demos are their OWN repos (each a real single-plugin
 repo, the same way a third party ships a plugin), not bundled here:
@@ -562,7 +557,7 @@ This applies only to a channel that accepts INBOUND connections (a listener). In
 goclaw's deployment a plugin runs in the agent's container, so an inbound port is not
 reachable from outside, which is exactly why the canonical channel (`goclaw-irc`) DIALS
 OUT instead. Prefer a dial-out channel; the guidance below is for the inbound case
-where it is unavoidable (the `cmd/webhook/` demo illustrates it).
+where it is unavoidable.
 
 A channel that accepts INBOUND traffic from the outside world is an open door into
 the agent: an inbound message becomes an agent prompt, so an unauthenticated source
@@ -582,8 +577,8 @@ plugin must too. Two principles for a channel author:
   asserted name may be kept as a display-only field.
 
 This is defense in depth: the plugin authenticates the transport and pins identity,
-and the host still applies its own access gate on top. The webhook demo implements
-both (bearer token + namespaced/pinned SenderID); see its README for the mechanics.
+and the host still applies its own access gate on top. (In practice goclaw's deployment
+favors dial-out channels, where this whole inbound concern does not arise.)
 
 serve_channel_test.go: drive `serveChannel` over in-memory pipes. Handshake announces
 Kind=channel; an Inbound pushed by a fake Channel's Start surfaces as a
@@ -670,13 +665,12 @@ unset (proxy off / dev mode) it leaves `RootCAs` nil so the system roots are use
 unchanged, so the same code is correct in both modes with no branching. The helper has
 NO OAuth or auth logic: credential injection lives entirely host-side in goclaw.
 
-## The worked demos (goclaw-roll, goclaw-irc, cmd/webhook/)
+## The worked demos (goclaw-roll, goclaw-irc)
 
-Reference plugins exercise the SDK end to end. The tool and channel demos are their
-OWN repos (each a real, installable single-plugin repo, the plugin IS the command),
-with their own `plugin.yml`, `-selftest`, and an end-to-end wire test. The
-build/run/register details live in each plugin's README, not here, so this spec stays
-the general SDK reference.
+Reference plugins exercise the SDK end to end. They are their OWN repos (each a real,
+installable single-plugin repo, the plugin IS the command), with their own
+`plugin.yml`, `-selftest`, and an end-to-end wire test. The build/run/register details
+live in each plugin's README, not here, so this spec stays the general SDK reference.
 
 - **[`goclaw-roll`](https://github.com/shindakun/goclaw-roll)** — the worked TOOL demo:
   a dice roller (NdM notation), the smallest thing that exercises typed args, input
@@ -689,14 +683,6 @@ the general SDK reference.
   connection, so there is no inbound listener and no open port. It owns
   reconnect-with-backoff and defers owner authorization to goclaw's access gate (IRC
   nicks are spoofable without SASL, a documented caveat).
-- **`cmd/webhook/`** (bundled in this repo) — an ILLUSTRATIVE channel, kept to show the
-  SAME `ServeChannel` contract with a different (inbound) transport, but it is
-  OFF-STRATEGY for goclaw's deployment: it runs an inbound HTTP listener, and a plugin
-  runs inside the agent's container, so its port is not reachable from the outside
-  network and nothing can POST to it. A real goclaw channel should DIAL OUT (like
-  `goclaw-irc`) rather than listen. webhook still authenticates inbound and pins
-  identity per the inbound-channel-security principle above, illustrating those defenses
-  for any future inbound use. See [`cmd/webhook/README.md`](../cmd/webhook/README.md).
 
 ## Plugin manifest (plugin.yml): the at-rest, pre-launch description
 
@@ -808,28 +794,7 @@ pre-launch source for the command. (A future version could add an optional hands
 field if the live and at-rest views ever need to agree, but the host does not need
 it for v1.)
 
-## Building plugins for goclaw (scripts/build-plugin.sh)
-
-`scripts/build-plugin.sh` stages a plugin in the per-plugin layout the host walks,
-so it is ready to copy into goclaw. Adapted from godoorkit's `scripts/build-door.sh`
-(which cross-compiles a door to many platforms), but a goclaw plugin is a binary
-PLUS its `plugin.yml`, so the script builds the binary and copies the manifest beside
-it:
-
-```text
-build/<name>/
-  <exec>        the built binary (named per plugin.yml `exec:`)
-  plugin.yml    copied verbatim from cmd/<name>/plugin.yml
-```
-
-Usage: `scripts/build-plugin.sh [name ...]`. With names, it builds those plugins;
-with no name, it builds every `cmd/<name>/` that has a `plugin.yml`. The script does
-NOT copy into goclaw: it only stages under `build/` (which is gitignored), and the
-operator copies `build/<name>/` into their goclaw plugins directory. It is bash-3.2
-compatible (the macOS default) and uses no external YAML dependency (it reads the
-flat `plugin.yml` with `sed`).
-
-### A plugin MUST be a Linux binary (it runs in the container)
+## A plugin MUST be a Linux binary (it runs in the container)
 
 This is a hard requirement, not a preference. goclaw launches plugins INSIDE the
 agent's Linux container (the in-container runner is the launcher), so a plugin must
@@ -841,12 +806,12 @@ load. Build for Linux:
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <name> .
 ```
 
-Use `GOARCH=arm64` if the goclaw host runs an arm64 container engine. `build-plugin.sh`
-defaults its target to `linux/amd64` for exactly this reason (override `GOOS`/`GOARCH`
-to match a different container arch). A plain `go build` produces a binary for the
-author's platform and is fine ONLY for `-selftest`/local development; it will not run
-inside goclaw unless that platform is linux. Pure-Go plugins (stdlib only, as the SDK
-core is) cross-compile cleanly with `CGO_ENABLED=0`.
+Use `GOARCH=arm64` if the goclaw host runs an arm64 container engine. A plain
+`go build` produces a binary for the author's platform and is fine ONLY for
+`-selftest`/local development; it will not run inside goclaw unless that platform is
+linux. Pure-Go plugins (stdlib only, as the SDK core is) cross-compile cleanly with
+`CGO_ENABLED=0`. The staged install is the built binary plus its `plugin.yml` in one
+directory, the per-plugin layout the host walks.
 
 ## Notes for the host side (goclaw), not built here
 

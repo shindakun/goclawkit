@@ -10,7 +10,7 @@ linters:
   # expected to pass cleanly; CI fails on any finding.
   default: standard
   enable:
-    - bodyclose      # HTTP response bodies must be closed (the webhook channel makes real requests)
+    - bodyclose      # HTTP response bodies must be closed (an HTTP-calling plugin may make real requests)
 
 formatters:
   enable:

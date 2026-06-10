@@ -24,8 +24,8 @@ launches: here the plugin is the command, and goclawkit is the kit.
   result back. Agent-initiated. (A tool can also be exposed as a slash command.)
 - **Channels** are long-lived and bidirectional: messages arrive from the outside
   world unprompted, the agent replies, and the reply goes back out. The chat-gateway
-  shape (Telegram, Discord, an inbound webhook). The agent never "calls" a channel;
-  the channel feeds the agent.
+  shape (Telegram, Discord, IRC). The agent never "calls" a channel; the channel feeds
+  the agent.
 
 Both ride the same wire protocol; a channel just adds new topics, no format change.
 
@@ -58,24 +58,14 @@ plugin, which is also how a third party would ship one):
 
 To INSTALL a plugin into goclaw, build it for **Linux** (plugins run in the agent's
 Linux container, so a host-platform binary fails with `exec format error`):
-`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <name> .`, or use
-`scripts/build-plugin.sh`, which defaults to `linux/amd64`.
+`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o <name> .`.
 
 ## Packaging and installing a plugin
 
 A plugin ships as its own directory with the built binary and a declarative
 `plugin.yml` the host reads before launching (kind, version, the env var names it
 needs, any slash command). The host walks a `plugins/` directory; each installed plugin
-is one subdir. `scripts/build-plugin.sh` stages a plugin (binary + its `plugin.yml`)
-into `build/<name>/`, ready to copy into goclaw:
-
-```sh
-scripts/build-plugin.sh webhook   # -> build/webhook/{webhook, plugin.yml}
-scripts/build-plugin.sh           # build every cmd/<name>/ that has a plugin.yml
-```
-
-(Run from a plugin repo, this stages that repo's plugin; run in goclawkit it stages
-the bundled `cmd/webhook` example.)
+is one subdir, the Linux binary plus its `plugin.yml`.
 
 Secrets are never written into `plugin.yml`: it lists env var *names*; the host
 supplies the values at launch.
@@ -128,11 +118,8 @@ goclawkit is the SDK only. Following godoorkit, importable code lives under `pkg
 - [`pkg/ipc/`](pkg/ipc/) — the shared wire protocol (frames, framing, the Session).
 - [`pkg/plugin/`](pkg/plugin/) — the author-facing SDK (`Tool`, `Channel`, `Poller`,
   `Serve`, `ServeChannel`, `ServePoll`, `ServeTool`, `HTTPClient`).
-- [`cmd/webhook/`](cmd/webhook/) — a bundled, ILLUSTRATIVE inbound-webhook channel
-  (kept to show the same contract over an inbound transport; see its README for why
-  the inbound model is off-strategy for goclaw's deployment).
 
-The worked tool and channel demos are their own repos:
+goclawkit is the SDK only; it bundles no plugins. The worked demos are their own repos:
 [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) (tool) and
 [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) (channel), each a real
 single-plugin repo you can clone, build, and install.
@@ -145,8 +132,6 @@ single-plugin repo you can clone, build, and install.
 - [`goclaw-roll`](https://github.com/shindakun/goclaw-roll) /
   [`goclaw-irc`](https://github.com/shindakun/goclaw-irc) — the worked tool and channel
   demos, each with its own build/run/register README.
-- [`cmd/webhook/README.md`](cmd/webhook/README.md) — the bundled inbound-webhook
-  example, including its inbound auth and identity model.
 
 The host side (the manifest walk, launching, supervision, hot add/reload) lives in
 goclaw at `docs/plugins-design.md`; goclawkit is only the plugin-author SDK plus the

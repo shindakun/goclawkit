@@ -1,15 +1,4 @@
-# Built example binaries. Anchored paths only, so these never match the cmd/<name>/
-# SOURCE directories (a bare "roll" would, since a slash-less pattern matches any
-# path component, including a dir).
-/roll
-/webhook
-/irc
-/cmd/roll/roll
-/cmd/webhook/webhook
-/cmd/irc/irc
-
-# Plugin build staging dir (scripts/build-plugin.sh output).
-/build/
+# goclawkit is the SDK module only (no bundled plugins / binaries).
 
 # Test binaries / coverage
 *.test

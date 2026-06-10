@@ -101,23 +101,23 @@ func newFakeChannel(name string) *fakeChannel {
 }
 
 func TestServeChannelHandshakeAnnouncesKindChannel(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	h := newChanHarness(t, fc, fc)
 	hok := h.handshake(t)
 	if hok.Info.Kind != KindChannel {
 		t.Errorf("Info.Kind = %q, want %q", hok.Info.Kind, KindChannel)
 	}
-	if hok.Info.Name != "webhook" || hok.Info.ProtocolVer != ipc.ProtocolVer {
-		t.Errorf("Info = %+v, want name=webhook protocol_ver=%d", hok.Info, ipc.ProtocolVer)
+	if hok.Info.Name != "fakechan" || hok.Info.ProtocolVer != ipc.ProtocolVer {
+		t.Errorf("Info = %+v, want name=fakechan protocol_ver=%d", hok.Info, ipc.ProtocolVer)
 	}
 }
 
 func TestServeChannelInboundBecomesEvent(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	h := newChanHarness(t, fc, fc)
 	h.handshake(t)
 
-	fc.inboundCh <- Inbound{Channel: "webhook", ChatID: "7", Sender: "alice", Text: "hi"}
+	fc.inboundCh <- Inbound{Channel: "fakechan", ChatID: "7", Sender: "alice", Text: "hi"}
 
 	f := h.recv(t)
 	if f.Type != ipc.FrameEvent || f.Topic != topicInbound {
@@ -137,7 +137,7 @@ func TestServeChannelInboundBecomesEvent(t *testing.T) {
 
 func TestServeChannelSendReachesChannel(t *testing.T) {
 	got := make(chan Outbound, 1)
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	fc.sendFn = func(ctx context.Context, out Outbound) error {
 		got <- out
 		return nil
@@ -146,7 +146,7 @@ func TestServeChannelSendReachesChannel(t *testing.T) {
 	h.handshake(t)
 
 	const id = 55
-	payload, _ := ipc.Marshal(Outbound{Channel: "webhook", ChatID: "7", Text: "reply"})
+	payload, _ := ipc.Marshal(Outbound{Channel: "fakechan", ChatID: "7", Text: "reply"})
 	_ = h.host.Send(ipc.Frame{Type: ipc.FrameRequest, ID: id, Topic: topicSend, Payload: payload})
 
 	f := h.recv(t)
@@ -169,7 +169,7 @@ func TestServeChannelSendReachesChannel(t *testing.T) {
 }
 
 func TestServeChannelSendErrorYieldsErrorResult(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	fc.sendFn = func(ctx context.Context, out Outbound) error {
 		return errors.New("post failed")
 	}
@@ -187,7 +187,7 @@ func TestServeChannelSendErrorYieldsErrorResult(t *testing.T) {
 }
 
 func TestServeChannelSendPanicRecovered(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	fc.sendFn = func(ctx context.Context, out Outbound) error { panic("boom") }
 	h := newChanHarness(t, fc, fc)
 	h.handshake(t)
@@ -209,7 +209,7 @@ func TestServeChannelSendPanicRecovered(t *testing.T) {
 
 func TestServeChannelActionWithSender(t *testing.T) {
 	gotKind := make(chan string, 1)
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	ac := &actionChannel{fakeChannel: fc, actionFn: func(ctx context.Context, chatID, kind string) error {
 		gotKind <- kind
 		return nil
@@ -230,7 +230,7 @@ func TestServeChannelActionWithSender(t *testing.T) {
 }
 
 func TestServeChannelActionWithoutSenderIsNoOpSuccess(t *testing.T) {
-	fc := newFakeChannel("webhook") // plain fakeChannel: no ActionSender
+	fc := newFakeChannel("fakechan") // plain fakeChannel: no ActionSender
 	h := newChanHarness(t, fc, fc)
 	h.handshake(t)
 
@@ -244,7 +244,7 @@ func TestServeChannelActionWithoutSenderIsNoOpSuccess(t *testing.T) {
 }
 
 func TestServeChannelShutdownCancelsStartAndReturnsNil(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	h := newChanHarness(t, fc, fc)
 	h.handshake(t)
 
@@ -261,7 +261,7 @@ func TestServeChannelShutdownCancelsStartAndReturnsNil(t *testing.T) {
 }
 
 func TestServeChannelHeartbeatReply(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	h := newChanHarness(t, fc, fc)
 	h.handshake(t)
 
@@ -273,7 +273,7 @@ func TestServeChannelHeartbeatReply(t *testing.T) {
 }
 
 func TestServeChannelStartErrorReturns(t *testing.T) {
-	fc := newFakeChannel("webhook")
+	fc := newFakeChannel("fakechan")
 	fc.startErr = errors.New("cannot bind")
 	h := newChanHarness(t, fc, fc)
 	// Handshake succeeds, then Start fails and serveChannel returns the error.
