@@ -87,29 +87,31 @@ A plugin's SOURCE repo can be laid out two ways, and goclaw's installer
 
    Install: `/plugin add https://github.com/you/goclaw-roll`
 
-2. **A monorepo with several plugins under `cmd/`** (e.g. `goclaw-gmail`, which ships a
-   `gmail` channel and a `gmail-tools` tool that share one `go.mod` and an `internal/`):
-   each plugin is `cmd/<name>/` with its OWN `plugin.yml`.
+2. **A monorepo with several plugins under `cmd/`**: each plugin is `cmd/<name>/` with
+   its OWN `plugin.yml`, sharing one `go.mod` and an `internal/`.
 
    ```text
-   goclaw-gmail/
+   some-repo/
      go.mod
      internal/...            # shared code
-     cmd/gmail/plugin.yml    # the channel
-     cmd/gmail-tools/plugin.yml  # the tool
+     cmd/foo/plugin.yml      # one plugin
+     cmd/bar/plugin.yml      # another
    ```
 
    Install ONE plugin at a time by naming its subdir with `#<subdir>`:
 
    ```text
-   /plugin add https://github.com/you/goclaw-gmail#cmd/gmail
-   /plugin add https://github.com/you/goclaw-gmail#cmd/gmail-tools
+   /plugin add https://github.com/you/some-repo#cmd/foo
    ```
 
-The monorepo form is the right choice when plugins share auth/config/code (a service's
-channel + its tools); the one-per-repo form is simplest for a standalone plugin. In both
-cases the build is sandboxed in a throwaway container and goclaw scans the WHOLE repo for
-red flags even when only one subdir is built (see goclaw `docs/security.md`).
+**One plugin per repo is the recommended form, and what all the example plugins use**
+(`goclaw-roll`, `goclaw-irc`, `goclaw-gmail`, `goclaw-gmail-tools`): it keeps release
+tags a simple `v<semver>` with no per-plugin namespacing (see `docs/sdk-spec.md`,
+"Releasing a plugin"). The monorepo form is still supported for a repo that genuinely
+wants to share code across plugins, but then a release tag needs a per-plugin prefix to
+say which plugin it releases. In both cases the build is sandboxed in a throwaway
+container and goclaw scans the WHOLE repo for red flags even when only one subdir is
+built (see goclaw `docs/security.md`).
 
 ## Layout
 
